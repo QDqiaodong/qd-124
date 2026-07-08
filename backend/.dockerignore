@@ -1,0 +1,42 @@
+# ===== 其他构建产物（本项目使用 target/*.jar，保留不忽略） =====
+*.war
+*.ear
+
+# ===== IDE 配置 =====
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.settings/
+.classpath
+.project
+.factorypath
+
+# ===== 日志 =====
+logs/
+*.log
+*.log.*
+
+# ===== 临时文件 =====
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== 版本控制 =====
+.git/
+.gitignore
+.svn/
+
+# ===== 文档 =====
+*.md
+docs/
+
+# ===== Maven =====
+.mvn/
+mvnw
+mvnw.cmd

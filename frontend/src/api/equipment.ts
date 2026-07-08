@@ -1,0 +1,36 @@
+import request from '@/utils/request'
+import type { ApiResponse, PageResponse, Equipment, Bracket } from '@/types'
+
+export function getEquipmentList(params: {
+  pageNum: number
+  pageSize: number
+  code?: string
+  name?: string
+}): Promise<ApiResponse<PageResponse<Equipment>>> {
+  return request({
+    url: '/equipment/list',
+    method: 'get',
+    params
+  })
+}
+
+export function getAllEquipment(): Promise<ApiResponse<Equipment[]>> {
+  return request({
+    url: '/equipment/all',
+    method: 'get'
+  })
+}
+
+export function getEquipmentBrackets(equipmentId: number): Promise<ApiResponse<Bracket[]>> {
+  return request({
+    url: `/equipment/${equipmentId}/brackets`,
+    method: 'get'
+  })
+}
+
+export function getUnboundBracketCount(): Promise<ApiResponse<number>> {
+  return request({
+    url: '/equipment/unbound-count',
+    method: 'get'
+  })
+}
