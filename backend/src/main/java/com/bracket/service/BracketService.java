@@ -34,15 +34,37 @@ public class BracketService {
         this.redisTemplate = redisTemplate;
     }
 
-    public PageResult<BracketVO> findAll(String name, String model, Pageable pageable) {
+    public PageResult<BracketVO> findAll(String name, String model, Integer bindStatus, Pageable pageable) {
         Page<Bracket> page;
         boolean hasName = name != null && !name.trim().isEmpty();
         boolean hasModel = model != null && !model.trim().isEmpty();
-        if (!hasName && !hasModel) {
+        boolean onlyUnbound = bindStatus != null && bindStatus == 0;
+        boolean onlyBound = bindStatus != null && bindStatus == 1;
+        if (onlyUnbound) {
+            if (hasName && hasModel) {
+                page = bracketRepository.findByNameContainingAndModelContainingAndEquipmentIdIsNull(name, model, pageable);
+            } else if (hasName) {
+                page = bracketRepository.findByNameContainingAndEquipmentIdIsNull(name, pageable);
+            } else if (hasModel) {
+                page = bracketRepository.findByModelContainingAndEquipmentIdIsNull(model, pageable);
+            } else {
+                page = bracketRepository.findByEquipmentIdIsNull(pageable);
+            }
+        } else if (onlyBound) {
+            if (hasName && hasModel) {
+                page = bracketRepository.findByNameContainingAndModelContainingAndEquipmentIdIsNotNull(name, model, pageable);
+            } else if (hasName) {
+                page = bracketRepository.findByNameContainingAndEquipmentIdIsNotNull(name, pageable);
+            } else if (hasModel) {
+                page = bracketRepository.findByModelContainingAndEquipmentIdIsNotNull(model, pageable);
+            } else {
+                page = bracketRepository.findByEquipmentIdIsNotNull(pageable);
+            }
+        } else if (!hasName && !hasModel) {
             page = bracketRepository.findAll(pageable);
         } else if (hasName && !hasModel) {
             page = bracketRepository.findByNameContaining(name, pageable);
-        } else if (!hasName && hasModel) {
+        } else if (!hasName) {
             page = bracketRepository.findByModelContaining(model, pageable);
         } else {
             page = bracketRepository.findByNameContainingAndModelContaining(name, model, pageable);

@@ -1,6 +1,7 @@
 package com.bracket.controller;
 
 import com.bracket.dto.ApiResponse;
+import com.bracket.dto.EquipmentRuleRequest;
 import com.bracket.dto.PageResult;
 import com.bracket.service.EquipmentService;
 import com.bracket.vo.BracketVO;
@@ -48,5 +49,19 @@ public class EquipmentController {
     @GetMapping("/unbound-count")
     public ApiResponse<Long> getUnboundCount() {
         return ApiResponse.success(equipmentService.getUnboundCount());
+    }
+
+    /** 维护设备配套规则：最大支架数量、允许型号、长宽范围；修改不影响已有绑定 */
+    @PutMapping("/{id}/rule")
+    public ApiResponse<EquipmentVO> updateRule(@PathVariable Long id, @RequestBody EquipmentRuleRequest request) {
+        try {
+            EquipmentVO vo = equipmentService.updateRule(id, request);
+            if (vo == null) {
+                return ApiResponse.fail("设备不存在");
+            }
+            return ApiResponse.success(vo);
+        } catch (IllegalArgumentException e) {
+            return ApiResponse.fail(e.getMessage());
+        }
     }
 }

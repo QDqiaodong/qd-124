@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -19,6 +20,24 @@ public class Equipment {
 
     @Column(name = "equipment_name", nullable = false)
     private String equipmentName;
+
+    @Column(name = "max_brackets")
+    private Integer maxBrackets;
+
+    @Column(name = "allowed_models", length = 1000)
+    private String allowedModels;
+
+    @Column(name = "min_length", precision = 10, scale = 2)
+    private BigDecimal minLength;
+
+    @Column(name = "max_length", precision = 10, scale = 2)
+    private BigDecimal maxLength;
+
+    @Column(name = "min_width", precision = 10, scale = 2)
+    private BigDecimal minWidth;
+
+    @Column(name = "max_width", precision = 10, scale = 2)
+    private BigDecimal maxWidth;
 
     @CreationTimestamp
     @Column(name = "create_time", updatable = false)
@@ -53,6 +72,54 @@ public class Equipment {
 
     public void setEquipmentName(String equipmentName) {
         this.equipmentName = equipmentName;
+    }
+
+    public Integer getMaxBrackets() {
+        return maxBrackets;
+    }
+
+    public void setMaxBrackets(Integer maxBrackets) {
+        this.maxBrackets = maxBrackets;
+    }
+
+    public String getAllowedModels() {
+        return allowedModels;
+    }
+
+    public void setAllowedModels(String allowedModels) {
+        this.allowedModels = allowedModels;
+    }
+
+    public BigDecimal getMinLength() {
+        return minLength;
+    }
+
+    public void setMinLength(BigDecimal minLength) {
+        this.minLength = minLength;
+    }
+
+    public BigDecimal getMaxLength() {
+        return maxLength;
+    }
+
+    public void setMaxLength(BigDecimal maxLength) {
+        this.maxLength = maxLength;
+    }
+
+    public BigDecimal getMinWidth() {
+        return minWidth;
+    }
+
+    public void setMinWidth(BigDecimal minWidth) {
+        this.minWidth = minWidth;
+    }
+
+    public BigDecimal getMaxWidth() {
+        return maxWidth;
+    }
+
+    public void setMaxWidth(BigDecimal maxWidth) {
+        this.maxWidth = maxWidth;
     }
 
     public LocalDateTime getCreateTime() {

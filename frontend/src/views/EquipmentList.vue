@@ -67,7 +67,42 @@
               </div>
               <div class="equipment-name">{{ eq.name }}</div>
             </div>
-            <div style="display: flex; align-items: center; gap: 12px">
+            <div class="equipment-card-meta">
+              <el-tag
+                :type="ruleTagType(eq)"
+                effect="light"
+                size="small"
+              >
+                {{ eq.ruleConfigured ? '规则已配置' : '未配置规则' }}
+              </el-tag>
+              <el-tag
+                :type="capacityTagType(eq)"
+                effect="plain"
+                size="small"
+              >
+                容量 {{ eq.bracketCount || 0 }}<template v-if="eq.maxBrackets != null"> / {{ eq.maxBrackets }}</template><template v-else> / ∞</template>
+              </el-tag>
+              <el-tag
+                v-if="eq.capacityStatus === 'exceeded'"
+                type="danger"
+                effect="dark"
+                size="small"
+              >超出容量</el-tag>
+              <el-tag
+                v-else-if="eq.capacityStatus === 'full'"
+                type="warning"
+                effect="dark"
+                size="small"
+              >已满</el-tag>
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                @click.stop="openRuleDialog(eq)"
+              >
+                <el-icon><Setting /></el-icon>
+                <span style="margin-left: 4px">配套规则</span>
+              </el-button>
               <el-badge :value="eq.bracketCount || 0" :max="99" type="primary">
                 <el-button size="small" type="primary" plain>
                   <el-icon><Grid /></el-icon>
@@ -90,10 +125,36 @@
             v-show="expandedIds.has(eq.id)"
             class="equipment-card-body"
           >
+            <div class="rule-overview" v-if="eq.ruleConfigured">
+              <span class="rule-overview-label">配套规则：</span>
+              <el-tag size="small" type="info" effect="plain">
+                最大支架数量：{{ eq.maxBrackets != null ? eq.maxBrackets + ' 个' : '不限' }}
+              </el-tag>
+              <el-tag size="small" type="info" effect="plain">
+                允许型号：{{ eq.allowedModels && eq.allowedModels.length ? eq.allowedModels.join('、') : '不限' }}
+              </el-tag>
+              <el-tag size="small" type="info" effect="plain">
+                长度：{{ formatRange(eq.minLength, eq.maxLength) }}
+              </el-tag>
+              <el-tag size="small" type="info" effect="plain">
+                宽度：{{ formatRange(eq.minWidth, eq.maxWidth) }}
+              </el-tag>
+            </div>
+            <div class="rule-overview" v-else>
+              <span class="rule-overview-label">配套规则：</span>
+              <el-tag size="small" type="warning" effect="plain">未配置，绑定时不做限制</el-tag>
+            </div>
+
             <div
               v-loading="loadingBracketId === eq.id"
               style="min-height: 80px"
             >
+              <div style="display: flex; justify-content: flex-end; margin-bottom: 8px">
+                <el-button size="small" type="success" plain @click="openBindDialog(eq)">
+                  <el-icon><Link /></el-icon>
+                  <span style="margin-left: 4px">绑定未配套支架</span>
+                </el-button>
+              </div>
               <el-table
                 v-if="equipmentBracketsMap.get(eq.id)?.length"
                 :data="equipmentBracketsMap.get(eq.id) || []"
@@ -115,7 +176,7 @@
                       link
                       @click.stop="handleUnbind(row, eq)"
                     >
-                      <el-icon><Unlink /></el-icon>
+                      <el-icon><Close /></el-icon>
                       解绑
                     </el-button>
                   </template>
@@ -145,23 +206,185 @@
         />
       </div>
     </div>
+
+    <!-- 配套规则配置弹窗 -->
+    <el-dialog
+      v-model="ruleDialogVisible"
+      title="设备配套规则配置"
+      width="600px"
+      destroy-on-close
+    >
+      <el-alert
+        v-if="currentEquipment"
+        :title="`规则仅作用于后续绑定，不影响「${currentEquipment.name}」已有的 ${currentEquipment.bracketCount || 0} 个绑定`"
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 16px"
+      />
+      <el-form
+        ref="ruleFormRef"
+        :model="ruleForm"
+        :rules="ruleFormRules"
+        label-width="120px"
+      >
+        <el-form-item label="最大支架数量" prop="maxBrackets">
+          <el-input-number
+            v-model="ruleForm.maxBrackets"
+            :min="0"
+            :precision="0"
+            placeholder="留空不限制"
+            style="width: 100%"
+          />
+          <div class="form-tip">不填或清空表示不限制容量</div>
+        </el-form-item>
+        <el-form-item label="允许型号" prop="allowedModels">
+          <el-select
+            v-model="ruleModelList"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="不选择表示允许所有型号"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="model in modelOptions"
+              :key="model"
+              :label="model"
+              :value="model"
+            />
+          </el-select>
+          <div class="form-tip">可从已有型号中选择，也可直接输入新型号，多个型号取其一即可</div>
+        </el-form-item>
+        <el-form-item label="长度范围(mm)">
+          <div class="range-row">
+            <el-form-item prop="minLength" style="margin-bottom: 0; flex: 1">
+              <el-input-number
+                v-model="ruleForm.minLength"
+                :min="0"
+                :precision="2"
+                placeholder="最小长度"
+                style="width: 100%"
+              />
+            </el-form-item>
+            <span class="range-sep">~</span>
+            <el-form-item prop="maxLength" style="margin-bottom: 0; flex: 1">
+              <el-input-number
+                v-model="ruleForm.maxLength"
+                :min="0"
+                :precision="2"
+                placeholder="最大长度"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </div>
+          <div class="form-tip">留空表示该侧不限制</div>
+        </el-form-item>
+        <el-form-item label="宽度范围(mm)">
+          <div class="range-row">
+            <el-form-item prop="minWidth" style="margin-bottom: 0; flex: 1">
+              <el-input-number
+                v-model="ruleForm.minWidth"
+                :min="0"
+                :precision="2"
+                placeholder="最小宽度"
+                style="width: 100%"
+              />
+            </el-form-item>
+            <span class="range-sep">~</span>
+            <el-form-item prop="maxWidth" style="margin-bottom: 0; flex: 1">
+              <el-input-number
+                v-model="ruleForm.maxWidth"
+                :min="0"
+                :precision="2"
+                placeholder="最大宽度"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </div>
+          <div class="form-tip">留空表示该侧不限制</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="ruleDialogVisible = false">取消</el-button>
+        <el-button @click="handleClearRule" :loading="ruleSubmitting">清空规则</el-button>
+        <el-button type="primary" :loading="ruleSubmitting" @click="handleRuleSubmit">保存规则</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 选择未绑定支架 -->
+    <el-dialog
+      v-model="bindDialogVisible"
+      title="绑定未配套支架"
+      width="640px"
+      destroy-on-close
+    >
+      <el-table
+        :data="unboundBrackets"
+        v-loading="unboundLoading"
+        size="small"
+        border
+        max-height="380"
+      >
+        <el-table-column prop="name" label="支架名称" min-width="120" />
+        <el-table-column prop="model" label="型号" min-width="110" />
+        <el-table-column label="尺寸(长×宽)" width="150" align="center">
+          <template #default="{ row }">
+            {{ row.length }} × {{ row.width }} mm
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="100" align="center">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" link :loading="checkingBracketId === row.id" @click="handleSingleCheck(row)">
+              选择
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty
+        v-if="!unboundLoading && unboundBrackets.length === 0"
+        description="没有未配套的支架"
+        :image-size="70"
+      />
+      <template #footer>
+        <el-button @click="bindDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <BindCheckDialog
+      v-model="checkDialogVisible"
+      :result="checkResult"
+      :confirm-loading="confirmLoading"
+      @confirm="handleCheckConfirm"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import {
   Search,
   Refresh,
   Monitor,
   Grid,
   ArrowDown,
-  Warning
+  Warning,
+  Setting,
+  Link,
+  Close
 } from '@element-plus/icons-vue'
-import { getEquipmentList, getEquipmentBrackets, getUnboundBracketCount } from '@/api/equipment'
-import { unbindBracket } from '@/api/binding'
-import type { Equipment, Bracket } from '@/types'
+import {
+  getEquipmentList,
+  getEquipmentBrackets,
+  getUnboundBracketCount,
+  updateEquipmentRule
+} from '@/api/equipment'
+import { getBracketList } from '@/api/bracket'
+import { unbindBracket, checkBind, confirmBind } from '@/api/binding'
+import type { Equipment, Bracket, EquipmentRule, BindCheckResult } from '@/types'
+import BindCheckDialog from '@/components/BindCheckDialog.vue'
 
 const loading = ref(false)
 const loadingBracketId = ref<number | null>(null)
@@ -178,6 +401,22 @@ const pagination = reactive({
 
 const expandedIds = ref(new Set<number>())
 const equipmentBracketsMap = ref(new Map<number, Bracket[]>())
+
+const ruleTagType = (eq: Equipment) => {
+  return eq.ruleConfigured ? 'success' : 'info'
+}
+
+const capacityTagType = (eq: Equipment) => {
+  if (eq.capacityStatus === 'exceeded') return 'danger'
+  if (eq.capacityStatus === 'full') return 'warning'
+  return 'primary'
+}
+
+const formatRange = (min?: number | null, max?: number | null) => {
+  const minText = min != null ? min : '不限'
+  const maxText = max != null ? max : '不限'
+  return `${minText} ~ ${maxText} mm`
+}
 
 const fetchUnboundCount = async () => {
   try {
@@ -258,6 +497,7 @@ const handleUnbind = (row: Bracket, eq: Equipment) => {
       try {
         await unbindBracket(row.id)
         ElMessage.success('解绑成功')
+        equipmentBracketsMap.value.delete(eq.id)
         fetchEquipmentBrackets(eq.id)
         fetchEquipmentList()
         fetchUnboundCount()
@@ -268,8 +508,275 @@ const handleUnbind = (row: Bracket, eq: Equipment) => {
     .catch(() => {})
 }
 
+// ============ 配套规则配置 ============
+const ruleDialogVisible = ref(false)
+const ruleSubmitting = ref(false)
+const currentEquipment = ref<Equipment | null>(null)
+const ruleFormRef = ref<FormInstance>()
+const modelOptions = ref<string[]>([])
+const ruleModelList = ref<string[]>([])
+const ruleForm = reactive<EquipmentRule>({
+  maxBrackets: null,
+  allowedModels: '',
+  minLength: null,
+  maxLength: null,
+  minWidth: null,
+  maxWidth: null
+})
+
+const ruleFormRules: FormRules = {
+  maxBrackets: [
+    {
+      validator: (_rule, value, callback) => {
+        if (value != null && value < 0) {
+          callback(new Error('最大支架数量不能为负数'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur'
+    }
+  ],
+  minLength: [
+    {
+      validator: (_rule, _value, callback) => {
+        if (ruleForm.minLength != null && ruleForm.maxLength != null && ruleForm.minLength > ruleForm.maxLength) {
+          callback(new Error('长度下限不能大于上限'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
+  ],
+  maxLength: [
+    {
+      validator: (_rule, _value, callback) => {
+        if (ruleForm.minLength != null && ruleForm.maxLength != null && ruleForm.minLength > ruleForm.maxLength) {
+          callback(new Error('长度上限不能小于下限'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
+  ],
+  minWidth: [
+    {
+      validator: (_rule, _value, callback) => {
+        if (ruleForm.minWidth != null && ruleForm.maxWidth != null && ruleForm.minWidth > ruleForm.maxWidth) {
+          callback(new Error('宽度下限不能大于上限'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
+  ],
+  maxWidth: [
+    {
+      validator: (_rule, _value, callback) => {
+        if (ruleForm.minWidth != null && ruleForm.maxWidth != null && ruleForm.minWidth > ruleForm.maxWidth) {
+          callback(new Error('宽度上限不能小于下限'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
+  ]
+}
+
+const fetchModelOptions = async () => {
+  try {
+    const res = await getBracketList({ pageNum: 1, pageSize: 200 })
+    const models = Array.from(new Set((res.data?.list || []).map((b) => b.model)))
+    modelOptions.value = models
+  } catch (error) {
+    console.error('获取型号列表失败:', error)
+  }
+}
+
+const openRuleDialog = (eq: Equipment) => {
+  currentEquipment.value = eq
+  ruleForm.maxBrackets = eq.maxBrackets ?? null
+  ruleModelList.value = [...(eq.allowedModels || [])]
+  ruleForm.minLength = eq.minLength ?? null
+  ruleForm.maxLength = eq.maxLength ?? null
+  ruleForm.minWidth = eq.minWidth ?? null
+  ruleForm.maxWidth = eq.maxWidth ?? null
+  fetchModelOptions()
+  ruleDialogVisible.value = true
+}
+
+const buildRulePayload = (): EquipmentRule => ({
+  maxBrackets: ruleForm.maxBrackets ?? null,
+  allowedModels: ruleModelList.value.join(','),
+  minLength: ruleForm.minLength ?? null,
+  maxLength: ruleForm.maxLength ?? null,
+  minWidth: ruleForm.minWidth ?? null,
+  maxWidth: ruleForm.maxWidth ?? null
+})
+
+const handleRuleSubmit = async () => {
+  if (!ruleFormRef.value || !currentEquipment.value) return
+  const equipmentId = currentEquipment.value.id
+  await ruleFormRef.value.validate(async (valid) => {
+    if (!valid) return
+    ruleSubmitting.value = true
+    try {
+      await updateEquipmentRule(equipmentId, buildRulePayload())
+      ElMessage.success('配套规则已保存，立即生效于后续绑定，已有绑定保持不变')
+      ruleDialogVisible.value = false
+      fetchEquipmentList()
+    } catch (error) {
+      console.error('保存规则失败:', error)
+    } finally {
+      ruleSubmitting.value = false
+    }
+  })
+}
+
+const handleClearRule = () => {
+  ElMessageBox.confirm('确定清空该设备的全部配套规则吗？清空后绑定将不做限制，已有绑定不受影响。', '清空规则确认', {
+    confirmButtonText: '确定清空',
+    cancelButtonText: '取消',
+    type: 'warning'
+  })
+    .then(async () => {
+      if (!currentEquipment.value) return
+      ruleForm.maxBrackets = null
+      ruleModelList.value = []
+      ruleForm.minLength = null
+      ruleForm.maxLength = null
+      ruleForm.minWidth = null
+      ruleForm.maxWidth = null
+      ruleSubmitting.value = true
+      try {
+        await updateEquipmentRule(currentEquipment.value.id, buildRulePayload())
+        ElMessage.success('配套规则已清空')
+        ruleDialogVisible.value = false
+        fetchEquipmentList()
+      } catch (error) {
+        console.error('清空规则失败:', error)
+      } finally {
+        ruleSubmitting.value = false
+      }
+    })
+    .catch(() => {})
+}
+
+// ============ 选择未配套支架并校验绑定 ============
+const bindDialogVisible = ref(false)
+const unboundLoading = ref(false)
+const unboundBrackets = ref<Bracket[]>([])
+const checkingBracketId = ref<number | null>(null)
+
+const checkDialogVisible = ref(false)
+const confirmLoading = ref(false)
+const checkResult = ref<BindCheckResult | null>(null)
+
+const openBindDialog = (eq: Equipment) => {
+  currentEquipment.value = eq
+  checkResult.value = null
+  bindDialogVisible.value = true
+  unboundBrackets.value = []
+  unboundLoading.value = true
+  getBracketList({ pageNum: 1, pageSize: 200, bindStatus: 0 })
+    .then((res) => {
+      unboundBrackets.value = res.data?.list || []
+    })
+    .catch((error) => {
+      console.error('获取未绑定支架失败:', error)
+    })
+    .finally(() => {
+      unboundLoading.value = false
+    })
+}
+
+const handleSingleCheck = async (bracket: Bracket) => {
+  if (!currentEquipment.value) return
+  checkingBracketId.value = bracket.id
+  try {
+    const res = await checkBind(bracket.id, currentEquipment.value.id)
+    checkResult.value = res.data
+    bindDialogVisible.value = false
+    checkDialogVisible.value = true
+  } catch (error) {
+    console.error('绑定校验失败:', error)
+  } finally {
+    checkingBracketId.value = null
+  }
+}
+
+const handleCheckConfirm = async () => {
+  if (!checkResult.value) return
+  const equipmentId = checkResult.value.equipmentId
+  const bracketId = checkResult.value.passedItems[0]?.bracketId
+  if (!bracketId) return
+  confirmLoading.value = true
+  try {
+    await confirmBind(bracketId, equipmentId)
+    ElMessage.success('绑定成功')
+    checkDialogVisible.value = false
+    if (expandedIds.value.has(equipmentId)) {
+      equipmentBracketsMap.value.delete(equipmentId)
+      fetchEquipmentBrackets(equipmentId)
+    }
+    fetchEquipmentList()
+    fetchUnboundCount()
+  } catch (error) {
+    console.error('绑定失败:', error)
+  } finally {
+    confirmLoading.value = false
+  }
+}
+
 onMounted(() => {
   fetchUnboundCount()
   fetchEquipmentList()
 })
 </script>
+
+<style scoped>
+.equipment-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rule-overview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+
+.rule-overview-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.range-sep {
+  color: #94a3b8;
+}
+</style>

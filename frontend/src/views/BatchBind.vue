@@ -124,8 +124,43 @@
             :key="eq.id"
             :label="`${eq.code} - ${eq.name}`"
             :value="eq.id"
-          />
+          >
+            <div class="equipment-option">
+              <span>{{ eq.code }} - {{ eq.name }}</span>
+              <span class="equipment-option-rule">
+                {{ eq.ruleConfigured ? `容量 ${eq.bracketCount || 0}${eq.maxBrackets != null ? '/' + eq.maxBrackets : '/∞'}` : '未配置规则' }}
+              </span>
+            </div>
+          </el-option>
         </el-select>
+      </div>
+
+      <div v-if="targetEquipment" class="target-rule-box">
+        <div class="target-rule-title">
+          <el-icon><InfoFilled /></el-icon>
+          目标设备配套规则
+        </div>
+        <template v-if="targetEquipment.ruleConfigured">
+          <div class="target-rule-row">
+            最大支架数量：
+            <b>{{ targetEquipment.maxBrackets != null ? targetEquipment.maxBrackets + ' 个' : '不限' }}</b>
+            <span style="color: #94a3b8; margin-left: 6px">
+              （当前已占用 {{ targetEquipment.bracketCount || 0 }} 个）
+            </span>
+          </div>
+          <div class="target-rule-row">
+            允许型号：{{ targetEquipment.allowedModels && targetEquipment.allowedModels.length ? targetEquipment.allowedModels.join('、') : '不限' }}
+          </div>
+          <div class="target-rule-row">
+            长度范围：{{ formatRange(targetEquipment.minLength, targetEquipment.maxLength) }}
+          </div>
+          <div class="target-rule-row">
+            宽度范围：{{ formatRange(targetEquipment.minWidth, targetEquipment.maxWidth) }}
+          </div>
+        </template>
+        <div v-else class="target-rule-row" style="color: #d97706">
+          该设备未配置配套规则，绑定时不做限制
+        </div>
       </div>
 
       <el-button
@@ -134,10 +169,10 @@
         style="width: 100%; margin-top: auto"
         :loading="submitting"
         :disabled="selectedBrackets.length === 0 || !targetEquipmentId"
-        @click="handleBatchBind"
+        @click="handleBatchCheck"
       >
-        <el-icon><Link /></el-icon>
-        <span>执行批量绑定</span>
+        <el-icon><CircleCheck /></el-icon>
+        <span>校验并批量绑定</span>
       </el-button>
 
       <div style="margin-top: 16px; padding: 12px; background: #f8fafc; border-radius: 6px; font-size: 12px; color: #64748b; line-height: 1.6">
@@ -147,30 +182,40 @@
         </div>
         <div>1. 左侧表格勾选需要绑定的支架</div>
         <div>2. 选择目标设备</div>
-        <div>3. 点击"执行批量绑定"完成操作</div>
-        <div style="color: #f59e0b; margin-top: 6px">注意：已绑定的支架将被重新绑定到新设备</div>
+        <div>3. 先按设备配套规则逐项校验，展示通过项与冲突原因</div>
+        <div>4. 确认后仅绑定通过项，冲突项保持原绑定不变</div>
       </div>
     </div>
+
+    <BindCheckDialog
+      v-model="checkDialogVisible"
+      :result="checkResult"
+      title="批量绑定规则校验"
+      :confirm-loading="confirmLoading"
+      @confirm="handleCheckConfirm"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, reactive, onMounted, computed } from 'vue'
+import { ElMessage } from 'element-plus'
 import {
   Search,
   Refresh,
   Delete,
-  Link,
-  InfoFilled
+  InfoFilled,
+  CircleCheck
 } from '@element-plus/icons-vue'
 import { getBracketList } from '@/api/bracket'
 import { getAllEquipment } from '@/api/equipment'
-import { batchBindBrackets } from '@/api/binding'
-import type { Bracket, Equipment } from '@/types'
+import { checkBatchBind, confirmBatchBind } from '@/api/binding'
+import type { Bracket, Equipment, BindCheckResult } from '@/types'
+import BindCheckDialog from '@/components/BindCheckDialog.vue'
 
 const loading = ref(false)
 const submitting = ref(false)
+const confirmLoading = ref(false)
 const searchName = ref('')
 const searchModel = ref('')
 const filterStatus = ref<number | undefined>(undefined)
@@ -185,6 +230,18 @@ const pagination = reactive({
 
 const equipmentList = ref<Equipment[]>([])
 const targetEquipmentId = ref<number | null>(null)
+const checkDialogVisible = ref(false)
+const checkResult = ref<BindCheckResult | null>(null)
+
+const targetEquipment = computed(
+  () => equipmentList.value.find((e) => e.id === targetEquipmentId.value) || null
+)
+
+const formatRange = (min?: number | null, max?: number | null) => {
+  const minText = min != null ? min : '不限'
+  const maxText = max != null ? max : '不限'
+  return `${minText} ~ ${maxText} mm`
+}
 
 const fetchBracketList = async () => {
   loading.value = true
@@ -242,7 +299,7 @@ const clearSelection = () => {
   selectedBrackets.value = []
 }
 
-const handleBatchBind = () => {
+const handleBatchCheck = async () => {
   if (selectedBrackets.value.length === 0) {
     ElMessage.warning('请先选择需要绑定的支架')
     return
@@ -252,33 +309,50 @@ const handleBatchBind = () => {
     return
   }
 
-  const targetEq = equipmentList.value.find((e) => e.id === targetEquipmentId.value)
-  ElMessageBox.confirm(
-    `确定将选中的 ${selectedBrackets.value.length} 个支架批量绑定到设备"${targetEq?.name || ''}"吗？`,
-    '批量绑定确认',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }
-  )
-    .then(async () => {
-      submitting.value = true
-      try {
-        await batchBindBrackets({
-          bracketIds: selectedBrackets.value.map((b) => b.id),
-          equipmentId: targetEquipmentId.value!
-        })
-        ElMessage.success('批量绑定成功')
-        clearSelection()
-        fetchBracketList()
-      } catch (error) {
-        console.error('批量绑定失败:', error)
-      } finally {
-        submitting.value = false
-      }
+  submitting.value = true
+  try {
+    const res = await checkBatchBind({
+      bracketIds: selectedBrackets.value.map((b) => b.id),
+      equipmentId: targetEquipmentId.value
     })
-    .catch(() => {})
+    checkResult.value = res.data
+    checkDialogVisible.value = true
+  } catch (error) {
+    console.error('绑定校验失败:', error)
+  } finally {
+    submitting.value = false
+  }
+}
+
+const handleCheckConfirm = async () => {
+  if (!checkResult.value) return
+  const passedIds = checkResult.value.passedItems.map((item) => item.bracketId)
+  if (passedIds.length === 0) {
+    ElMessage.warning('没有通过校验的支架，无法绑定')
+    return
+  }
+  confirmLoading.value = true
+  try {
+    const res = await confirmBatchBind({
+      bracketIds: passedIds,
+      equipmentId: checkResult.value.equipmentId
+    })
+    const boundCount = res.data?.boundCount ?? passedIds.length
+    const conflictCount = checkResult.value.conflicts.length
+    if (conflictCount > 0) {
+      ElMessage.warning(`已绑定 ${boundCount} 项，${conflictCount} 项冲突未绑定`)
+    } else {
+      ElMessage.success(`批量绑定成功，共绑定 ${boundCount} 项`)
+    }
+    checkDialogVisible.value = false
+    selectedBrackets.value = []
+    fetchBracketList()
+    fetchEquipmentList()
+  } catch (error) {
+    console.error('批量绑定失败:', error)
+  } finally {
+    confirmLoading.value = false
+  }
 }
 
 onMounted(() => {
@@ -286,3 +360,41 @@ onMounted(() => {
   fetchEquipmentList()
 })
 </script>
+
+<style scoped>
+.equipment-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-right: 8px;
+}
+
+.equipment-option-rule {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.target-rule-box {
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.9;
+}
+
+.target-rule-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 4px;
+}
+
+.target-rule-row b {
+  color: #1e40af;
+}
+</style>

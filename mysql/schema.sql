@@ -2,6 +2,12 @@ CREATE TABLE IF NOT EXISTS equipment (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     equipment_code VARCHAR(50) NOT NULL UNIQUE COMMENT '封口机设备编号',
     equipment_name VARCHAR(100) COMMENT '设备名称',
+    max_brackets INT DEFAULT NULL COMMENT '最大支架数量，空表示不限制',
+    allowed_models VARCHAR(1000) DEFAULT NULL COMMENT '允许型号，逗号分隔，空表示不限制',
+    min_length DECIMAL(10,2) DEFAULT NULL COMMENT '允许最小长度(mm)',
+    max_length DECIMAL(10,2) DEFAULT NULL COMMENT '允许最大长度(mm)',
+    min_width DECIMAL(10,2) DEFAULT NULL COMMENT '允许最小宽度(mm)',
+    max_width DECIMAL(10,2) DEFAULT NULL COMMENT '允许最大宽度(mm)',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_equipment_code (equipment_code)
@@ -21,12 +27,12 @@ CREATE TABLE IF NOT EXISTS bracket (
     CONSTRAINT fk_bracket_equipment FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='支架档案表';
 
-INSERT INTO equipment (equipment_code, equipment_name) VALUES
-('FK-001', '1号封口机'),
-('FK-002', '2号封口机'),
-('FK-003', '3号封口机'),
-('FK-004', '4号封口机'),
-('FK-005', '5号封口机');
+INSERT INTO equipment (equipment_code, equipment_name, max_brackets, allowed_models, min_length, max_length, min_width, max_width) VALUES
+('FK-001', '1号封口机', 3, 'ST-A001,ST-B002', 250.00, 450.00, 120.00, 220.00),
+('FK-002', '2号封口机', 2, 'ST-C003,ST-E005', 200.00, 350.00, 100.00, 180.00),
+('FK-003', '3号封口机', 4, NULL, 300.00, 500.00, NULL, NULL),
+('FK-004', '4号封口机', 2, 'ST-D004,ST-G007', NULL, NULL, NULL, NULL),
+('FK-005', '5号封口机', NULL, NULL, NULL, NULL, NULL, NULL);
 
 INSERT INTO bracket (name, model, length_mm, width_mm, equipment_id) VALUES
 ('A型支架', 'ST-A001', 300.00, 150.00, 1),

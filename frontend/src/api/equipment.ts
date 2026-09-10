@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { ApiResponse, PageResponse, Equipment, Bracket } from '@/types'
+import type { ApiResponse, PageResponse, Equipment, Bracket, EquipmentRule } from '@/types'
 
 export function getEquipmentList(params: {
   pageNum: number
@@ -34,3 +34,15 @@ export function getUnboundBracketCount(): Promise<ApiResponse<number>> {
     method: 'get'
   })
 }
+
+export function updateEquipmentRule(
+  equipmentId: number,
+  data: EquipmentRule
+): Promise<ApiResponse<Equipment>> {
+  return request({
+    url: `/equipment/${equipmentId}/rule`,
+    method: 'put',
+    data
+  })
+}
+

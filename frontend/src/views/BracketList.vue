@@ -181,28 +181,64 @@
           <span>{{ currentBindBracket?.name }}</span>
         </el-form-item>
         <el-form-item label="选择设备" prop="equipmentId">
-          <el-select v-model="selectedEquipmentId" placeholder="请选择目标设备" style="width: 100%">
+          <el-select
+            v-model="selectedEquipmentId"
+            placeholder="请选择目标设备"
+            style="width: 100%"
+            @change="handleEquipmentChange"
+          >
             <el-option
               v-for="eq in equipmentList"
               :key="eq.id"
               :label="`${eq.code} - ${eq.name}`"
               :value="eq.id"
-            />
+            >
+              <div class="equipment-option">
+                <span>{{ eq.code }} - {{ eq.name }}</span>
+                <span class="equipment-option-rule">
+                  {{ eq.ruleConfigured ? `容量 ${eq.bracketCount || 0}${eq.maxBrackets != null ? '/' + eq.maxBrackets : '/∞'}` : '未配置规则' }}
+                </span>
+              </div>
+            </el-option>
           </el-select>
         </el-form-item>
       </el-form>
+      <div v-if="selectedEquipment" class="bind-rule-tip">
+        <template v-if="selectedEquipment.ruleConfigured">
+          <el-tag size="small" type="info" effect="plain">
+            最大数量：{{ selectedEquipment.maxBrackets != null ? selectedEquipment.maxBrackets + ' 个' : '不限' }}
+          </el-tag>
+          <el-tag size="small" type="info" effect="plain">
+            允许型号：{{ selectedEquipment.allowedModels && selectedEquipment.allowedModels.length ? selectedEquipment.allowedModels.join('、') : '不限' }}
+          </el-tag>
+          <el-tag size="small" type="info" effect="plain">
+            长度：{{ formatRange(selectedEquipment.minLength, selectedEquipment.maxLength) }}
+          </el-tag>
+          <el-tag size="small" type="info" effect="plain">
+            宽度：{{ formatRange(selectedEquipment.minWidth, selectedEquipment.maxWidth) }}
+          </el-tag>
+        </template>
+        <el-tag v-else size="small" type="warning" effect="plain">该设备未配置规则，绑定不做限制</el-tag>
+      </div>
       <template #footer>
         <el-button @click="bindDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="bindSubmitting" @click="handleBind">
-          确定绑定
+          校验并绑定
         </el-button>
       </template>
     </el-dialog>
+
+    <BindCheckDialog
+      v-model="checkDialogVisible"
+      :result="checkResult"
+      :confirm-loading="confirmLoading"
+      @confirm="handleCheckConfirm"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import {
   Search,
@@ -222,8 +258,9 @@ import {
   getBracketStats
 } from '@/api/bracket'
 import { getAllEquipment } from '@/api/equipment'
-import { bindBracketToEquipment, unbindBracket } from '@/api/binding'
-import type { Bracket, Equipment } from '@/types'
+import { unbindBracket, checkBind, confirmBind } from '@/api/binding'
+import type { Bracket, Equipment, BindCheckResult } from '@/types'
+import BindCheckDialog from '@/components/BindCheckDialog.vue'
 
 const loading = ref(false)
 const searchName = ref('')
@@ -377,6 +414,19 @@ const bindSubmitting = ref(false)
 const currentBindBracket = ref<Bracket | null>(null)
 const selectedEquipmentId = ref<number | null>(null)
 const equipmentList = ref<Equipment[]>([])
+const checkDialogVisible = ref(false)
+const checkResult = ref<BindCheckResult | null>(null)
+const confirmLoading = ref(false)
+
+const selectedEquipment = computed(
+  () => equipmentList.value.find((e) => e.id === selectedEquipmentId.value) || null
+)
+
+const formatRange = (min?: number | null, max?: number | null) => {
+  const minText = min != null ? min : '不限'
+  const maxText = max != null ? max : '不限'
+  return `${minText} ~ ${maxText} mm`
+}
 
 const fetchEquipmentList = async () => {
   try {
@@ -390,8 +440,13 @@ const fetchEquipmentList = async () => {
 const openBindDialog = (row: Bracket) => {
   currentBindBracket.value = row
   selectedEquipmentId.value = null
+  checkResult.value = null
   fetchEquipmentList()
   bindDialogVisible.value = true
+}
+
+const handleEquipmentChange = () => {
+  // 仅切换设备，校验在点击"校验并绑定"时统一执行
 }
 
 const handleBind = async () => {
@@ -401,15 +456,30 @@ const handleBind = async () => {
   }
   bindSubmitting.value = true
   try {
-    await bindBracketToEquipment(currentBindBracket.value.id, selectedEquipmentId.value)
-    ElMessage.success('绑定成功')
+    const res = await checkBind(currentBindBracket.value.id, selectedEquipmentId.value)
+    checkResult.value = res.data
     bindDialogVisible.value = false
+    checkDialogVisible.value = true
+  } catch (error) {
+    console.error('绑定校验失败:', error)
+  } finally {
+    bindSubmitting.value = false
+  }
+}
+
+const handleCheckConfirm = async () => {
+  if (!checkResult.value || !currentBindBracket.value) return
+  confirmLoading.value = true
+  try {
+    await confirmBind(currentBindBracket.value.id, checkResult.value.equipmentId)
+    ElMessage.success('绑定成功')
+    checkDialogVisible.value = false
     fetchBracketList()
     fetchStats()
   } catch (error) {
     console.error('绑定失败:', error)
   } finally {
-    bindSubmitting.value = false
+    confirmLoading.value = false
   }
 }
 
@@ -437,3 +507,26 @@ onMounted(() => {
   fetchBracketList()
 })
 </script>
+
+<style scoped>
+.equipment-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-right: 8px;
+}
+
+.equipment-option-rule {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.bind-rule-tip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: -8px;
+  padding-left: 80px;
+}
+</style>

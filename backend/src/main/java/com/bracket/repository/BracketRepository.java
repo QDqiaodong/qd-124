@@ -19,6 +19,22 @@ public interface BracketRepository extends JpaRepository<Bracket, Long> {
 
     Page<Bracket> findByNameContainingAndModelContaining(String name, String model, Pageable pageable);
 
+    Page<Bracket> findByEquipmentIdIsNull(Pageable pageable);
+
+    Page<Bracket> findByEquipmentIdIsNotNull(Pageable pageable);
+
+    Page<Bracket> findByNameContainingAndEquipmentIdIsNull(String name, Pageable pageable);
+
+    Page<Bracket> findByNameContainingAndEquipmentIdIsNotNull(String name, Pageable pageable);
+
+    Page<Bracket> findByModelContainingAndEquipmentIdIsNull(String model, Pageable pageable);
+
+    Page<Bracket> findByModelContainingAndEquipmentIdIsNotNull(String model, Pageable pageable);
+
+    Page<Bracket> findByNameContainingAndModelContainingAndEquipmentIdIsNull(String name, String model, Pageable pageable);
+
+    Page<Bracket> findByNameContainingAndModelContainingAndEquipmentIdIsNotNull(String name, String model, Pageable pageable);
+
     long countByEquipmentIdIsNotNull();
 
     long countByEquipmentIdIsNull();
