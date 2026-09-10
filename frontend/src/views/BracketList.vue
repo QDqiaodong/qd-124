@@ -153,7 +153,14 @@
           <el-input v-model="formData.name" placeholder="请输入支架名称" />
         </el-form-item>
         <el-form-item label="型号" prop="model">
-          <el-input v-model="formData.model" placeholder="请输入支架型号" />
+          <el-input
+            v-model="formData.model"
+            placeholder="请输入支架型号"
+            list="bracket-model-suggestions"
+          />
+          <datalist id="bracket-model-suggestions">
+            <option v-for="model in modelSuggestions" :key="model" :value="model" />
+          </datalist>
         </el-form-item>
         <el-form-item label="长(mm)" prop="length">
           <el-input-number v-model="formData.length" :min="0" :precision="2" style="width: 100%" />
@@ -259,8 +266,11 @@ import {
 } from '@/api/bracket'
 import { getAllEquipment } from '@/api/equipment'
 import { unbindBracket, checkBind, confirmBind } from '@/api/binding'
+import { useModelSuggestions } from '@/composables/useModelSuggestions'
 import type { Bracket, Equipment, BindCheckResult } from '@/types'
 import BindCheckDialog from '@/components/BindCheckDialog.vue'
+
+const { modelSuggestions, refreshModelSuggestions } = useModelSuggestions()
 
 const loading = ref(false)
 const searchName = ref('')
@@ -353,6 +363,7 @@ const openCreateDialog = () => {
   formData.length = 0
   formData.width = 0
   formDialogVisible.value = true
+  refreshModelSuggestions()
 }
 
 const openEditDialog = (row: Bracket) => {
@@ -364,6 +375,7 @@ const openEditDialog = (row: Bracket) => {
   formData.length = row.length
   formData.width = row.width
   formDialogVisible.value = true
+  refreshModelSuggestions()
 }
 
 const handleFormSubmit = async () => {
@@ -382,6 +394,8 @@ const handleFormSubmit = async () => {
       formDialogVisible.value = false
       fetchBracketList()
       fetchStats()
+      // 型号可能新增或改名，刷新热门型号建议缓存
+      refreshModelSuggestions()
     } catch (error) {
       console.error('提交失败:', error)
     } finally {
@@ -402,6 +416,7 @@ const handleDelete = (row: Bracket) => {
         ElMessage.success('删除成功')
         fetchBracketList()
         fetchStats()
+        refreshModelSuggestions()
       } catch (error) {
         console.error('删除失败:', error)
       }

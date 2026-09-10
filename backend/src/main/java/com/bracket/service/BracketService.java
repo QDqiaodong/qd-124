@@ -6,13 +6,18 @@ import com.bracket.entity.Equipment;
 import com.bracket.repository.BracketRepository;
 import com.bracket.repository.EquipmentRepository;
 import com.bracket.vo.BracketVO;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,11 +26,18 @@ import java.util.stream.Collectors;
 @Service
 public class BracketService {
 
+    private static final Logger log = LoggerFactory.getLogger(BracketService.class);
+
     private final BracketRepository bracketRepository;
     private final EquipmentRepository equipmentRepository;
     private final RedisTemplate<String, Object> redisTemplate;
 
     private static final String POPULAR_MODELS_KEY = "bracket:models:popular";
+
+    /**
+     * 缓存兜底过期时间，正常情况下支架增删改后会主动失效缓存。
+     */
+    private static final Duration POPULAR_MODELS_TTL = Duration.ofMinutes(10);
 
     @Autowired
     public BracketService(BracketRepository bracketRepository, EquipmentRepository equipmentRepository, RedisTemplate<String, Object> redisTemplate) {
@@ -89,6 +101,8 @@ public class BracketService {
         bracket.setLengthMm(request.getLengthMm());
         bracket.setWidthMm(request.getWidthMm());
         Bracket saved = bracketRepository.save(bracket);
+        // 新型号会出现在热门型号建议中，事务提交后失效缓存
+        evictPopularModelsCacheAfterCommit();
         return convertToVO(saved);
     }
 
@@ -98,39 +112,97 @@ public class BracketService {
         if (existing == null) {
             return null;
         }
+        boolean modelChanged = !java.util.Objects.equals(existing.getModel(), request.getModel());
         existing.setName(request.getName());
         existing.setModel(request.getModel());
         existing.setLengthMm(request.getLengthMm());
         existing.setWidthMm(request.getWidthMm());
         Bracket updated = bracketRepository.save(existing);
+        // 仅型号发生变化（改名）时才需要失效，改名后旧型号不应残留在建议中
+        if (modelChanged) {
+            evictPopularModelsCacheAfterCommit();
+        }
         return convertToVO(updated);
     }
 
     @Transactional
     public void delete(Long id) {
         Bracket bracket = bracketRepository.findById(id).orElse(null);
-        if (bracket != null) {
-            bracket.setEquipmentId(null);
-            bracketRepository.save(bracket);
+        if (bracket == null) {
+            return;
         }
-        bracketRepository.deleteById(id);
+        bracket.setEquipmentId(null);
+        bracketRepository.save(bracket);
+        bracketRepository.delete(bracket);
+        // 删除后该型号可能已不存在于任何支架，事务提交后失效缓存
+        evictPopularModelsCacheAfterCommit();
+    }
+
+    /**
+     * 在当前事务成功提交后失效热门型号缓存，避免"先删缓存、后提交事务"
+     * 期间并发请求把旧数据重新写回缓存。Redis 异常不影响支架数据的保存。
+     */
+    private void evictPopularModelsCacheAfterCommit() {
+        try {
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        evictPopularModelsCache();
+                    }
+                });
+            } else {
+                evictPopularModelsCache();
+            }
+        } catch (Exception e) {
+            log.warn("注册热门型号缓存失效回调失败", e);
+        }
+    }
+
+    private void evictPopularModelsCache() {
+        try {
+            redisTemplate.delete(POPULAR_MODELS_KEY);
+        } catch (Exception e) {
+            // 缓存失效失败不应影响支架的新增、编辑或删除
+            log.warn("失效热门型号缓存失败，key={}", POPULAR_MODELS_KEY, e);
+        }
     }
 
     @SuppressWarnings("unchecked")
     public List<String> getPopularModels() {
-        List<Object> cached = redisTemplate.opsForList().range(POPULAR_MODELS_KEY, 0, -1);
+        List<Object> cached = null;
+        try {
+            cached = redisTemplate.opsForList().range(POPULAR_MODELS_KEY, 0, -1);
+        } catch (Exception e) {
+            // Redis 不可用时降级为直接查询数据库
+            log.warn("读取热门型号缓存失败，降级查询数据库", e);
+        }
         if (cached != null && !cached.isEmpty()) {
             return cached.stream().map(Object::toString).collect(Collectors.toList());
         }
-        List<Bracket> brackets = bracketRepository.findAll();
-        List<String> models = brackets.stream()
+        List<String> models = loadPopularModelsFromDb();
+        cachePopularModels(models);
+        return models;
+    }
+
+    private List<String> loadPopularModelsFromDb() {
+        return bracketRepository.findAll().stream()
                 .map(Bracket::getModel)
                 .distinct()
                 .collect(Collectors.toList());
-        if (!models.isEmpty()) {
-            redisTemplate.opsForList().rightPushAll(POPULAR_MODELS_KEY, models.toArray());
+    }
+
+    private void cachePopularModels(List<String> models) {
+        if (models == null || models.isEmpty()) {
+            return;
         }
-        return models;
+        try {
+            redisTemplate.opsForList().rightPushAll(POPULAR_MODELS_KEY, models.toArray());
+            redisTemplate.expire(POPULAR_MODELS_KEY, POPULAR_MODELS_TTL);
+        } catch (Exception e) {
+            // 缓存写入失败不影响本次查询结果
+            log.warn("写入热门型号缓存失败，key={}", POPULAR_MODELS_KEY, e);
+        }
     }
 
     public Map<String, Long> getStats() {

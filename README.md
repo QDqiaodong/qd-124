@@ -38,11 +38,15 @@ docker compose up -d --build
 ```bash
 cd backend
 mvn compile -q
+mvn test
 
 cd ../frontend
 npm ci
 npm run build
+npm test
 ```
+
+后端测试（JUnit 5 + Mockito）覆盖热门型号 Redis 缓存在支架新增、改名、删除后的失效逻辑，以及 Redis 异常不影响支架保存的降级路径；前端测试（Vitest + Vue Test Utils）回归支架档案操作后型号建议刷新、绑定/规则页型号建议实时性。
 
 ## Docker 构建说明
 

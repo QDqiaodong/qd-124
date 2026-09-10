@@ -381,7 +381,7 @@ import {
   getUnboundBracketCount,
   updateEquipmentRule
 } from '@/api/equipment'
-import { getBracketList } from '@/api/bracket'
+import { getBracketList, getBracketModels } from '@/api/bracket'
 import { unbindBracket, checkBind, confirmBind } from '@/api/binding'
 import type { Equipment, Bracket, EquipmentRule, BindCheckResult } from '@/types'
 import BindCheckDialog from '@/components/BindCheckDialog.vue'
@@ -589,9 +589,9 @@ const ruleFormRules: FormRules = {
 
 const fetchModelOptions = async () => {
   try {
-    const res = await getBracketList({ pageNum: 1, pageSize: 200 })
-    const models = Array.from(new Set((res.data?.list || []).map((b) => b.model)))
-    modelOptions.value = models
+    // 使用热门型号接口（后端按支架档案实时维护，删除/改名后不会残留旧型号）
+    const res = await getBracketModels()
+    modelOptions.value = res.data || []
   } catch (error) {
     console.error('获取型号列表失败:', error)
   }

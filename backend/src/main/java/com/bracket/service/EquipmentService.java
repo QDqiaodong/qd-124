@@ -154,7 +154,7 @@ public class EquipmentService {
         if (bracketCount > maxBrackets) {
             return "exceeded";
         }
-        if (bracketCount.equals(maxBrackets)) {
+        if (bracketCount == maxBrackets) {
             return "full";
         }
         return "normal";
