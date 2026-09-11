@@ -38,4 +38,6 @@ public interface BracketRepository extends JpaRepository<Bracket, Long> {
     long countByEquipmentIdIsNotNull();
 
     long countByEquipmentIdIsNull();
+
+    List<Bracket> findByModelIn(List<String> models);
 }

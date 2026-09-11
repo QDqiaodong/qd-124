@@ -106,6 +106,20 @@ public class BracketService {
         return convertToVO(saved);
     }
 
+    /**
+     * 批量导入专用：仅保存已逐行校验通过的支架，整体一个事务，
+     * 提交后失效热门型号缓存（导入会引入新型号）。
+     */
+    @Transactional
+    public List<Bracket> saveAllForImport(List<Bracket> brackets) {
+        if (brackets == null || brackets.isEmpty()) {
+            return List.of();
+        }
+        List<Bracket> saved = bracketRepository.saveAll(brackets);
+        evictPopularModelsCacheAfterCommit();
+        return saved;
+    }
+
     @Transactional
     public BracketVO update(Long id, com.bracket.dto.BracketCreateRequest request) {
         Bracket existing = bracketRepository.findById(id).orElse(null);

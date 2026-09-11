@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import BracketList from '@/views/BracketList.vue'
 import EquipmentList from '@/views/EquipmentList.vue'
 import BatchBind from '@/views/BatchBind.vue'
+import BracketImport from '@/views/BracketImport.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -21,6 +22,12 @@ const routes: RouteRecordRaw[] = [
     name: 'BatchBind',
     component: BatchBind,
     meta: { title: '批量绑定' }
+  },
+  {
+    path: '/bracket-import',
+    name: 'BracketImport',
+    component: BracketImport,
+    meta: { title: '支架档案批量导入' }
   }
 ]
 

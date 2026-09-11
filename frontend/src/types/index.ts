@@ -80,3 +80,31 @@ export interface BatchBindRequest {
   bracketIds: number[]
   equipmentId: number
 }
+
+export type BracketImportStatus = 'VALID' | 'DUPLICATE' | 'INVALID'
+
+export interface BracketImportRow {
+  rowNum: number
+  name: string | null
+  model: string | null
+  length: number | null
+  width: number | null
+  status: BracketImportStatus
+  reason: string | null
+}
+
+export interface BracketImportPreview {
+  totalCount: number
+  validCount: number
+  duplicateCount: number
+  invalidCount: number
+  rows: BracketImportRow[]
+}
+
+export interface BracketImportResult {
+  totalCount: number
+  successCount: number
+  failedCount: number
+  skippedCount: number
+  failedRows: BracketImportRow[]
+}
