@@ -8,6 +8,8 @@ import com.bracket.repository.BracketRepository;
 import com.bracket.repository.EquipmentRepository;
 import com.bracket.vo.BracketVO;
 import com.bracket.vo.EquipmentVO;
+import com.bracket.vo.RuleChangeDiagnosisVO;
+import com.bracket.vo.RuleImpactItemVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -15,8 +17,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -27,12 +31,15 @@ public class EquipmentService {
     private final EquipmentRepository equipmentRepository;
     private final BracketRepository bracketRepository;
     private final BracketService bracketService;
+    private final RuleMatcher ruleMatcher;
 
     @Autowired
-    public EquipmentService(EquipmentRepository equipmentRepository, BracketRepository bracketRepository, BracketService bracketService) {
+    public EquipmentService(EquipmentRepository equipmentRepository, BracketRepository bracketRepository,
+                            BracketService bracketService, RuleMatcher ruleMatcher) {
         this.equipmentRepository = equipmentRepository;
         this.bracketRepository = bracketRepository;
         this.bracketService = bracketService;
+        this.ruleMatcher = ruleMatcher;
     }
 
     public PageResult<EquipmentVO> findAll(String code, String name, Pageable pageable) {
@@ -74,14 +81,133 @@ public class EquipmentService {
         }
         validateRule(request);
         // 仅更新配套规则，不改动设备信息与已有绑定
+        applyRule(equipment, request);
+        Equipment saved = equipmentRepository.save(equipment);
+        return convertToVO(saved, currentCountMap());
+    }
+
+    /**
+     * 规则变更影响诊断：在不写库的前提下，用候选规则校验该设备当前已绑定的支架，
+     * 区分「存量绑定不再合规，需要人工处理」与「存量仍合规，仅影响后续绑定」。
+     * 诊断使用与绑定校验同一个 {@link RuleMatcher}，保存后结论与本预览一致。
+     */
+    @Transactional(readOnly = true)
+    public RuleChangeDiagnosisVO diagnoseRule(Long id, EquipmentRuleRequest request) {
+        Equipment equipment = equipmentRepository.findById(id).orElse(null);
+        if (equipment == null) {
+            return null;
+        }
+        validateRule(request);
+
+        boolean changed = !sameRule(equipment, request);
+        Equipment candidate = buildCandidate(equipment, request);
+        // 复制为可变列表后按支架 ID 稳定排序：容量超额时，最后绑定的支架确定性地落入需人工处理范围
+        List<Bracket> boundBrackets = new ArrayList<>(bracketRepository.findByEquipmentId(id));
+        boundBrackets.sort(Comparator.comparing(Bracket::getId));
+
+        List<RuleImpactItemVO> existingViolations = new ArrayList<>();
+        List<RuleImpactItemVO> compliantItems = new ArrayList<>();
+        for (Bracket bracket : boundBrackets) {
+            List<String> reasons = ruleMatcher.violations(candidate, bracket);
+            RuleImpactItemVO item = toImpactItem(bracket);
+            if (!reasons.isEmpty()) {
+                item.setImpactType("existing_violation");
+                item.setReasons(reasons);
+                existingViolations.add(item);
+            } else {
+                compliantItems.add(item);
+            }
+        }
+
+        // 容量收紧：型号/尺寸仍合规但超出新上限的已绑定支架需要人工处理
+        List<RuleImpactItemVO> capacityImpacts = new ArrayList<>();
+        List<RuleImpactItemVO> futureOnlyItems = new ArrayList<>();
+        Integer maxBrackets = request.getMaxBrackets();
+        if (maxBrackets != null) {
+            for (int i = 0; i < compliantItems.size(); i++) {
+                RuleImpactItemVO item = compliantItems.get(i);
+                if (i >= maxBrackets) {
+                    item.setImpactType("capacity_only");
+                    item.setReasons(List.of("超出设备最大支架数量（上限" + maxBrackets
+                            + "个，当前已绑定" + boundBrackets.size() + "个），需人工解绑或调整容量"));
+                    capacityImpacts.add(item);
+                } else {
+                    item.setImpactType("future_only");
+                    item.setReasons(List.of());
+                    futureOnlyItems.add(item);
+                }
+            }
+        } else {
+            for (RuleImpactItemVO item : compliantItems) {
+                item.setImpactType("future_only");
+                item.setReasons(List.of());
+                futureOnlyItems.add(item);
+            }
+        }
+
+        int manualCount = existingViolations.size() + capacityImpacts.size();
+        RuleChangeDiagnosisVO result = new RuleChangeDiagnosisVO();
+        result.setEquipmentId(equipment.getId());
+        result.setEquipmentCode(equipment.getEquipmentCode());
+        result.setEquipmentName(equipment.getEquipmentName());
+        result.setCurrentCount(boundBrackets.size());
+        result.setMaxBrackets(maxBrackets);
+        result.setRuleChanged(changed);
+        result.setExistingViolations(existingViolations);
+        result.setCapacityImpacts(capacityImpacts);
+        result.setFutureOnlyItems(futureOnlyItems);
+        result.setCapacityExceededCount(capacityImpacts.size());
+        result.setManualCount(manualCount);
+        // 无任何影响：规则未变化，或变化后没有需要人工处理的存量绑定
+        result.setNoImpact(!changed && manualCount == 0);
+        return result;
+    }
+
+    private void applyRule(Equipment equipment, EquipmentRuleRequest request) {
         equipment.setMaxBrackets(request.getMaxBrackets());
         equipment.setAllowedModels(normalizeModels(request.getAllowedModels()));
         equipment.setMinLength(toBigDecimal(request.getMinLength()));
         equipment.setMaxLength(toBigDecimal(request.getMaxLength()));
         equipment.setMinWidth(toBigDecimal(request.getMinWidth()));
         equipment.setMaxWidth(toBigDecimal(request.getMaxWidth()));
-        Equipment saved = equipmentRepository.save(equipment);
-        return convertToVO(saved, currentCountMap());
+    }
+
+    /** 仅用于诊断比对的临时设备副本，复制规则字段，不参与持久化。 */
+    private Equipment buildCandidate(Equipment equipment, EquipmentRuleRequest request) {
+        Equipment candidate = new Equipment();
+        candidate.setId(equipment.getId());
+        candidate.setEquipmentCode(equipment.getEquipmentCode());
+        candidate.setEquipmentName(equipment.getEquipmentName());
+        applyRule(candidate, request);
+        return candidate;
+    }
+
+    private boolean sameRule(Equipment equipment, EquipmentRuleRequest request) {
+        return java.util.Objects.equals(equipment.getMaxBrackets(), request.getMaxBrackets())
+                && java.util.Objects.equals(equipment.getAllowedModels(), normalizeModels(request.getAllowedModels()))
+                && sameDecimal(equipment.getMinLength(), request.getMinLength())
+                && sameDecimal(equipment.getMaxLength(), request.getMaxLength())
+                && sameDecimal(equipment.getMinWidth(), request.getMinWidth())
+                && sameDecimal(equipment.getMaxWidth(), request.getMaxWidth());
+    }
+
+    private boolean sameDecimal(BigDecimal stored, Double requested) {
+        if (stored == null || requested == null) {
+            return stored == null && requested == null;
+        }
+        return stored.compareTo(BigDecimal.valueOf(requested)) == 0;
+    }
+
+    private RuleImpactItemVO toImpactItem(Bracket bracket) {
+        return new RuleImpactItemVO(
+                bracket.getId(),
+                bracket.getName(),
+                bracket.getModel(),
+                bracket.getLengthMm() != null ? bracket.getLengthMm().doubleValue() : null,
+                bracket.getWidthMm() != null ? bracket.getWidthMm().doubleValue() : null,
+                null,
+                List.of()
+        );
     }
 
     private void validateRule(EquipmentRuleRequest request) {

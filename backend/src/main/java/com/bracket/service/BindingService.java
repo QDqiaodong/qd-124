@@ -12,7 +12,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,13 +26,15 @@ public class BindingService {
     private final BracketRepository bracketRepository;
     private final EquipmentRepository equipmentRepository;
     private final BracketService bracketService;
+    private final RuleMatcher ruleMatcher;
 
     @Autowired
     public BindingService(BracketRepository bracketRepository, EquipmentRepository equipmentRepository,
-                          BracketService bracketService) {
+                          BracketService bracketService, RuleMatcher ruleMatcher) {
         this.bracketRepository = bracketRepository;
         this.equipmentRepository = equipmentRepository;
         this.bracketService = bracketService;
+        this.ruleMatcher = ruleMatcher;
     }
 
     @Transactional
@@ -121,7 +122,7 @@ public class BindingService {
                 items.add(new BindCheckItemVO(bracketId, null, null, null, null, false, "支架不存在"));
                 continue;
             }
-            String reason = matchRule(equipment, bracket);
+            String reason = ruleMatcher.matchRule(equipment, bracket);
             if (reason == null && !alreadyOnEquipment.contains(bracketId)) {
                 if (remainingSlots != null && remainingSlots <= 0) {
                     reason = "超出设备最大支架数量（上限" + equipment.getMaxBrackets() + "个，当前已占用" + currentCount + "个）";
@@ -159,50 +160,6 @@ public class BindingService {
         List<Bracket> saved = bracketRepository.saveAll(brackets);
         List<BracketVO> voList = bracketService.convertToVOList(saved);
         return new BindConfirmResultVO(voList.size(), voList);
-    }
-
-    /**
-     * 按设备配套规则校验单个支架，返回冲突原因；通过时返回 null。
-     * 规则字段为空表示该项不限制；设备未配置任何规则时全部放行。
-     */
-    private String matchRule(Equipment equipment, Bracket bracket) {
-        List<String> allowedModels = EquipmentService.parseModels(equipment.getAllowedModels());
-        if (!allowedModels.isEmpty() && !allowedModels.contains(bracket.getModel())) {
-            return "型号不在允许范围内（允许：" + String.join("、", allowedModels) + "）";
-        }
-        String lengthReason = checkDimension("长度", bracket.getLengthMm(),
-                equipment.getMinLength(), equipment.getMaxLength());
-        if (lengthReason != null) {
-            return lengthReason;
-        }
-        String widthReason = checkDimension("宽度", bracket.getWidthMm(),
-                equipment.getMinWidth(), equipment.getMaxWidth());
-        if (widthReason != null) {
-            return widthReason;
-        }
-        return null;
-    }
-
-    private String checkDimension(String label, BigDecimal value, BigDecimal min, BigDecimal max) {
-        if (min == null && max == null) {
-            return null;
-        }
-        if (value == null) {
-            return label + "尺寸缺失，无法满足" + formatRange(label, min, max);
-        }
-        if (min != null && value.compareTo(min) < 0) {
-            return label + "低于允许范围（" + formatRange(label, min, max) + "）";
-        }
-        if (max != null && value.compareTo(max) > 0) {
-            return label + "超出允许范围（" + formatRange(label, min, max) + "）";
-        }
-        return null;
-    }
-
-    private String formatRange(String label, BigDecimal min, BigDecimal max) {
-        String minText = min != null ? min.stripTrailingZeros().toPlainString() : "不限";
-        String maxText = max != null ? max.stripTrailingZeros().toPlainString() : "不限";
-        return label + minText + "~" + maxText + "mm";
     }
 
     private List<Long> deduplicate(List<Long> ids) {

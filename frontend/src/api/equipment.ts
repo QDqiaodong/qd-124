@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { ApiResponse, PageResponse, Equipment, Bracket, EquipmentRule } from '@/types'
+import type { ApiResponse, PageResponse, Equipment, Bracket, EquipmentRule, RuleChangeDiagnosis } from '@/types'
 
 export function getEquipmentList(params: {
   pageNum: number
@@ -42,6 +42,21 @@ export function updateEquipmentRule(
   return request({
     url: `/equipment/${equipmentId}/rule`,
     method: 'put',
+    data
+  })
+}
+
+/**
+ * 规则变更影响诊断：不落库，预览候选规则下当前已绑定支架中受影响条目及原因，
+ * 区分需要人工处理的存量绑定与仅影响后续绑定的条目。
+ */
+export function diagnoseEquipmentRule(
+  equipmentId: number,
+  data: EquipmentRule
+): Promise<ApiResponse<RuleChangeDiagnosis>> {
+  return request({
+    url: `/equipment/${equipmentId}/rule/diagnose`,
+    method: 'post',
     data
   })
 }

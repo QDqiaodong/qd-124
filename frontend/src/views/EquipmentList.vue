@@ -211,105 +211,235 @@
     <el-dialog
       v-model="ruleDialogVisible"
       title="设备配套规则配置"
-      width="600px"
+      width="720px"
       destroy-on-close
+      @close="resetDiagnosisState"
     >
-      <el-alert
-        v-if="currentEquipment"
-        :title="`规则仅作用于后续绑定，不影响「${currentEquipment.name}」已有的 ${currentEquipment.bracketCount || 0} 个绑定`"
-        type="info"
-        :closable="false"
-        show-icon
-        style="margin-bottom: 16px"
-      />
-      <el-form
-        ref="ruleFormRef"
-        :model="ruleForm"
-        :rules="ruleFormRules"
-        label-width="120px"
-      >
-        <el-form-item label="最大支架数量" prop="maxBrackets">
-          <el-input-number
-            v-model="ruleForm.maxBrackets"
-            :min="0"
-            :precision="0"
-            placeholder="留空不限制"
-            style="width: 100%"
-          />
-          <div class="form-tip">不填或清空表示不限制容量</div>
-        </el-form-item>
-        <el-form-item label="允许型号" prop="allowedModels">
-          <el-select
-            v-model="ruleModelList"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="不选择表示允许所有型号"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="model in modelOptions"
-              :key="model"
-              :label="model"
-              :value="model"
+      <!-- 第一步：规则表单 -->
+      <template v-if="!diagnosisVisible">
+        <el-alert
+          title="保存前可预览变更对存量绑定的影响；新规则只约束后续绑定，不会自动解除任何已有绑定"
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 16px"
+        />
+        <el-form
+          ref="ruleFormRef"
+          :model="ruleForm"
+          :rules="ruleFormRules"
+          label-width="120px"
+        >
+          <el-form-item label="最大支架数量" prop="maxBrackets">
+            <el-input-number
+              v-model="ruleForm.maxBrackets"
+              :min="0"
+              :precision="0"
+              placeholder="留空不限制"
+              style="width: 100%"
             />
-          </el-select>
-          <div class="form-tip">可从已有型号中选择，也可直接输入新型号，多个型号取其一即可</div>
-        </el-form-item>
-        <el-form-item label="长度范围(mm)">
-          <div class="range-row">
-            <el-form-item prop="minLength" style="margin-bottom: 0; flex: 1">
-              <el-input-number
-                v-model="ruleForm.minLength"
-                :min="0"
-                :precision="2"
-                placeholder="最小长度"
-                style="width: 100%"
+            <div class="form-tip">不填或清空表示不限制容量</div>
+          </el-form-item>
+          <el-form-item label="允许型号" prop="allowedModels">
+            <el-select
+              v-model="ruleModelList"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              placeholder="不选择表示允许所有型号"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="model in modelOptions"
+                :key="model"
+                :label="model"
+                :value="model"
               />
-            </el-form-item>
-            <span class="range-sep">~</span>
-            <el-form-item prop="maxLength" style="margin-bottom: 0; flex: 1">
-              <el-input-number
-                v-model="ruleForm.maxLength"
-                :min="0"
-                :precision="2"
-                placeholder="最大长度"
-                style="width: 100%"
-              />
-            </el-form-item>
+            </el-select>
+            <div class="form-tip">可从已有型号中选择，也可直接输入新型号，多个型号取其一即可</div>
+          </el-form-item>
+          <el-form-item label="长度范围(mm)">
+            <div class="range-row">
+              <el-form-item prop="minLength" style="margin-bottom: 0; flex: 1">
+                <el-input-number
+                  v-model="ruleForm.minLength"
+                  :min="0"
+                  :precision="2"
+                  placeholder="最小长度"
+                  style="width: 100%"
+                />
+              </el-form-item>
+              <span class="range-sep">~</span>
+              <el-form-item prop="maxLength" style="margin-bottom: 0; flex: 1">
+                <el-input-number
+                  v-model="ruleForm.maxLength"
+                  :min="0"
+                  :precision="2"
+                  placeholder="最大长度"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </div>
+            <div class="form-tip">留空表示该侧不限制</div>
+          </el-form-item>
+          <el-form-item label="宽度范围(mm)">
+            <div class="range-row">
+              <el-form-item prop="minWidth" style="margin-bottom: 0; flex: 1">
+                <el-input-number
+                  v-model="ruleForm.minWidth"
+                  :min="0"
+                  :precision="2"
+                  placeholder="最小宽度"
+                  style="width: 100%"
+                />
+              </el-form-item>
+              <span class="range-sep">~</span>
+              <el-form-item prop="maxWidth" style="margin-bottom: 0; flex: 1">
+                <el-input-number
+                  v-model="ruleForm.maxWidth"
+                  :min="0"
+                  :precision="2"
+                  placeholder="最大宽度"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </div>
+            <div class="form-tip">留空表示该侧不限制</div>
+          </el-form-item>
+        </el-form>
+      </template>
+
+      <!-- 第二步：变更影响诊断 -->
+      <div v-else v-loading="diagnosisLoading">
+        <template v-if="diagnosis">
+          <el-alert
+            v-if="diagnosis.noImpact"
+            title="候选规则与当前配置一致，当前已绑定支架不受任何影响"
+            type="success"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 12px"
+          />
+          <el-alert
+            v-else-if="diagnosis.manualCount > 0"
+            :closable="false"
+            show-icon
+            type="warning"
+            style="margin-bottom: 12px"
+          >
+            <template #title>
+              检测到 {{ diagnosis.manualCount }} 个已绑定支架需要人工处理
+              （型号/尺寸不再合规 {{ diagnosis.existingViolations.length }} 个、
+              超出新容量 {{ diagnosis.capacityImpacts.length }} 个）。
+              保存后规则立即对后续绑定生效，但系统不会自动解绑，请人工解绑或调整规则。
+            </template>
+          </el-alert>
+          <el-alert
+            v-else
+            :title="`规则变更仅影响后续绑定：当前 ${diagnosis.currentCount} 个已绑定支架在新规则下全部合规，无需人工处理`"
+            type="success"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 12px"
+          />
+
+          <div class="diagnosis-summary">
+            <span class="diagnosis-summary-item">
+              当前绑定 <b>{{ diagnosis.currentCount }}</b> 个
+            </span>
+            <span class="diagnosis-summary-item">
+              新容量上限
+              <b><template v-if="diagnosis.maxBrackets != null">{{ diagnosis.maxBrackets }} 个</template><template v-else>不限</template></b>
+            </span>
+            <span class="diagnosis-summary-item">
+              需人工处理 <b :class="diagnosis.manualCount > 0 ? 'impact-danger' : ''">{{ diagnosis.manualCount }}</b> 个
+            </span>
+            <span class="diagnosis-summary-item">
+              仅影响后续绑定 <b>{{ diagnosis.futureOnlyItems.length }}</b> 个
+            </span>
           </div>
-          <div class="form-tip">留空表示该侧不限制</div>
-        </el-form-item>
-        <el-form-item label="宽度范围(mm)">
-          <div class="range-row">
-            <el-form-item prop="minWidth" style="margin-bottom: 0; flex: 1">
-              <el-input-number
-                v-model="ruleForm.minWidth"
-                :min="0"
-                :precision="2"
-                placeholder="最小宽度"
-                style="width: 100%"
-              />
-            </el-form-item>
-            <span class="range-sep">~</span>
-            <el-form-item prop="maxWidth" style="margin-bottom: 0; flex: 1">
-              <el-input-number
-                v-model="ruleForm.maxWidth"
-                :min="0"
-                :precision="2"
-                placeholder="最大宽度"
-                style="width: 100%"
-              />
-            </el-form-item>
+
+          <div v-if="manualImpactItems.length" class="impact-block">
+            <div class="impact-block-title impact-danger">需要人工处理的存量绑定（{{ manualImpactItems.length }}）</div>
+            <el-table :data="manualImpactItems" size="small" border max-height="240">
+              <el-table-column prop="bracketName" label="支架名称" min-width="120">
+                <template #default="{ row }">{{ row.bracketName || `#${row.bracketId}` }}</template>
+              </el-table-column>
+              <el-table-column prop="model" label="型号" min-width="100" />
+              <el-table-column label="尺寸(长×宽)" width="140" align="center">
+                <template #default="{ row }">
+                  <template v-if="row.length != null && row.width != null">{{ row.length }} × {{ row.width }} mm</template>
+                  <span v-else style="color: #94a3b8">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="影响类型" width="110" align="center">
+                <template #default="{ row }">
+                  <el-tag v-if="row.impactType === 'existing_violation'" type="danger" effect="dark" size="small">不合规</el-tag>
+                  <el-tag v-else type="warning" effect="dark" size="small">容量超额</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="原因" min-width="220">
+                <template #default="{ row }">
+                  <span style="color: #dc2626">{{ row.reasons.join('；') }}</span>
+                </template>
+              </el-table-column>
+            </el-table>
           </div>
-          <div class="form-tip">留空表示该侧不限制</div>
-        </el-form-item>
-      </el-form>
+
+          <div v-if="diagnosis.futureOnlyItems.length" class="impact-block">
+            <div class="impact-block-title">仅影响后续绑定的已有支架（{{ diagnosis.futureOnlyItems.length }}）</div>
+            <el-table :data="diagnosis.futureOnlyItems" size="small" border max-height="200">
+              <el-table-column prop="bracketName" label="支架名称" min-width="120">
+                <template #default="{ row }">{{ row.bracketName || `#${row.bracketId}` }}</template>
+              </el-table-column>
+              <el-table-column prop="model" label="型号" min-width="100" />
+              <el-table-column label="尺寸(长×宽)" width="140" align="center">
+                <template #default="{ row }">
+                  {{ row.length }} × {{ row.width }} mm
+                </template>
+              </el-table-column>
+              <el-table-column label="影响类型" width="110" align="center">
+                <template #default>
+                  <el-tag type="info" effect="plain" size="small">仅后续生效</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="说明" min-width="180">
+                <template #default>
+                  <span style="color: #16a34a">新规则下仍合规，存量绑定保持不变</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+
+          <el-empty
+            v-if="diagnosis.currentCount === 0"
+            description="当前设备暂无已绑定支架，规则变更只影响后续绑定"
+            :image-size="70"
+          />
+        </template>
+      </div>
+
       <template #footer>
-        <el-button @click="ruleDialogVisible = false">取消</el-button>
-        <el-button @click="handleClearRule" :loading="ruleSubmitting">清空规则</el-button>
-        <el-button type="primary" :loading="ruleSubmitting" @click="handleRuleSubmit">保存规则</el-button>
+        <template v-if="!diagnosisVisible">
+          <el-button @click="ruleDialogVisible = false">取消</el-button>
+          <el-button :loading="ruleSubmitting" @click="handleClearRule">清空规则</el-button>
+          <el-button type="primary" :loading="diagnosisLoading" @click="handlePreviewImpact">
+            预览变更影响
+          </el-button>
+        </template>
+        <template v-else>
+          <el-button @click="ruleDialogVisible = false">取消</el-button>
+          <el-button :disabled="diagnosisLoading" @click="backToRuleForm">返回修改</el-button>
+          <el-button
+            type="primary"
+            :loading="ruleSubmitting"
+            :disabled="!diagnosis?.ruleChanged"
+            @click="handleConfirmSave"
+          >
+            确认保存
+          </el-button>
+        </template>
       </template>
     </el-dialog>
 
@@ -362,7 +492,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import {
   Search,
@@ -379,11 +509,12 @@ import {
   getEquipmentList,
   getEquipmentBrackets,
   getUnboundBracketCount,
-  updateEquipmentRule
+  updateEquipmentRule,
+  diagnoseEquipmentRule
 } from '@/api/equipment'
 import { getBracketList, getBracketModels } from '@/api/bracket'
 import { unbindBracket, checkBind, confirmBind } from '@/api/binding'
-import type { Equipment, Bracket, EquipmentRule, BindCheckResult } from '@/types'
+import type { Equipment, Bracket, EquipmentRule, BindCheckResult, RuleChangeDiagnosis, RuleImpactItem } from '@/types'
 import BindCheckDialog from '@/components/BindCheckDialog.vue'
 
 const loading = ref(false)
@@ -605,6 +736,7 @@ const openRuleDialog = (eq: Equipment) => {
   ruleForm.maxLength = eq.maxLength ?? null
   ruleForm.minWidth = eq.minWidth ?? null
   ruleForm.maxWidth = eq.maxWidth ?? null
+  resetDiagnosisState()
   fetchModelOptions()
   ruleDialogVisible.value = true
 }
@@ -618,27 +750,77 @@ const buildRulePayload = (): EquipmentRule => ({
   maxWidth: ruleForm.maxWidth ?? null
 })
 
-const handleRuleSubmit = async () => {
+// ============ 规则变更影响诊断（预览不落库） ============
+const diagnosisVisible = ref(false)
+const diagnosisLoading = ref(false)
+const diagnosis = ref<RuleChangeDiagnosis | null>(null)
+/** 需要人工处理的存量绑定：型号/尺寸不合规 + 容量超额，按后端分类顺序合并 */
+const manualImpactItems = computed<RuleImpactItem[]>(() => {
+  if (!diagnosis.value) return []
+  return [...diagnosis.value.existingViolations, ...diagnosis.value.capacityImpacts]
+})
+
+const resetDiagnosisState = () => {
+  diagnosisVisible.value = false
+  diagnosis.value = null
+  diagnosisLoading.value = false
+}
+
+const backToRuleForm = () => {
+  diagnosisVisible.value = false
+}
+
+/**
+ * 表单校验通过后调用诊断接口：纯预览、不写库。
+ */
+const runDiagnosis = async (): Promise<boolean> => {
+  if (!currentEquipment.value) return false
+  diagnosisLoading.value = true
+  try {
+    const res = await diagnoseEquipmentRule(currentEquipment.value.id, buildRulePayload())
+    diagnosis.value = res.data
+    diagnosisVisible.value = true
+    return true
+  } catch (error) {
+    console.error('规则变更影响诊断失败:', error)
+    return false
+  } finally {
+    diagnosisLoading.value = false
+  }
+}
+
+const handlePreviewImpact = () => {
   if (!ruleFormRef.value || !currentEquipment.value) return
-  const equipmentId = currentEquipment.value.id
-  await ruleFormRef.value.validate(async (valid) => {
+  ruleFormRef.value.validate(async (valid) => {
     if (!valid) return
-    ruleSubmitting.value = true
-    try {
-      await updateEquipmentRule(equipmentId, buildRulePayload())
-      ElMessage.success('配套规则已保存，立即生效于后续绑定，已有绑定保持不变')
-      ruleDialogVisible.value = false
-      fetchEquipmentList()
-    } catch (error) {
-      console.error('保存规则失败:', error)
-    } finally {
-      ruleSubmitting.value = false
-    }
+    await runDiagnosis()
   })
 }
 
+/** 确认保存：以诊断时的候选规则落库；保存后刷新设备与支架数据，保证三处一致 */
+const handleConfirmSave = async () => {
+  if (!currentEquipment.value || !diagnosis.value?.ruleChanged) return
+  const equipmentId = currentEquipment.value.id
+  ruleSubmitting.value = true
+  try {
+    await updateEquipmentRule(equipmentId, buildRulePayload())
+    ElMessage.success('配套规则已保存，立即生效于后续绑定；需人工处理的存量绑定请尽快处理')
+    ruleDialogVisible.value = false
+    resetDiagnosisState()
+    equipmentBracketsMap.value.delete(equipmentId)
+    if (expandedIds.value.has(equipmentId)) {
+      fetchEquipmentBrackets(equipmentId)
+    }
+    fetchEquipmentList()
+  } catch (error) {
+    console.error('保存规则失败:', error)
+  } finally {
+    ruleSubmitting.value = false
+  }
+}
+
 const handleClearRule = () => {
-  ElMessageBox.confirm('确定清空该设备的全部配套规则吗？清空后绑定将不做限制，已有绑定不受影响。', '清空规则确认', {
+  ElMessageBox.confirm('确定清空该设备的全部配套规则吗？清空后绑定将不做限制，可在保存前预览影响。', '清空规则确认', {
     confirmButtonText: '确定清空',
     cancelButtonText: '取消',
     type: 'warning'
@@ -651,17 +833,8 @@ const handleClearRule = () => {
       ruleForm.maxLength = null
       ruleForm.minWidth = null
       ruleForm.maxWidth = null
-      ruleSubmitting.value = true
-      try {
-        await updateEquipmentRule(currentEquipment.value.id, buildRulePayload())
-        ElMessage.success('配套规则已清空')
-        ruleDialogVisible.value = false
-        fetchEquipmentList()
-      } catch (error) {
-        console.error('清空规则失败:', error)
-      } finally {
-        ruleSubmitting.value = false
-      }
+      // 与正常修改走同一条「预览影响 → 确认保存」路径，不直接落库
+      await runDiagnosis()
     })
     .catch(() => {})
 }
@@ -778,5 +951,38 @@ onMounted(() => {
 
 .range-sep {
   color: #94a3b8;
+}
+
+.diagnosis-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.diagnosis-summary-item b {
+  margin-left: 4px;
+  font-size: 15px;
+  color: #1e293b;
+}
+
+.impact-danger {
+  color: #dc2626 !important;
+}
+
+.impact-block {
+  margin-bottom: 14px;
+}
+
+.impact-block-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 6px;
 }
 </style>
