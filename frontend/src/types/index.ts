@@ -99,6 +99,27 @@ export interface BindConfirmResult {
   brackets: Bracket[]
 }
 
+/** 换线改挂预检结果：容量字段均针对目标封口机，另带来源设备信息 */
+export interface RehangCheckResult extends BindCheckResult {
+  sourceEquipmentId: number
+  sourceEquipmentCode: string | null
+  sourceEquipmentName: string | null
+}
+
+export interface RehangConfirmResult {
+  /** 一次性改挂成功的通过项数量 */
+  rehungCount: number
+  rehung: Bracket[]
+  /** 未通过预检、仍留在源设备上的冲突项 */
+  conflicts: BindCheckItem[]
+}
+
+export interface RehangRequest {
+  sourceEquipmentId: number
+  targetEquipmentId: number
+  bracketIds: number[]
+}
+
 export interface ApiResponse<T> {
   code: number
   message: string

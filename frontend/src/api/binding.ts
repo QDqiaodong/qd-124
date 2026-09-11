@@ -3,7 +3,10 @@ import type {
   ApiResponse,
   BatchBindRequest,
   BindCheckResult,
-  BindConfirmResult
+  BindConfirmResult,
+  RehangCheckResult,
+  RehangConfirmResult,
+  RehangRequest
 } from '@/types'
 
 export function bindBracketToEquipment(
@@ -69,6 +72,24 @@ export function confirmBind(
 export function confirmBatchBind(data: BatchBindRequest): Promise<ApiResponse<BindConfirmResult>> {
   return request({
     url: '/binding/batch-confirm',
+    method: 'post',
+    data
+  })
+}
+
+/** 换线改挂预检：按目标机现行型号、长宽与容量规则逐项判定 */
+export function checkRehang(data: RehangRequest): Promise<ApiResponse<RehangCheckResult>> {
+  return request({
+    url: '/binding/rehang-check',
+    method: 'post',
+    data
+  })
+}
+
+/** 换线改挂确认：一次性改挂通过项，冲突项仍留在源设备 */
+export function confirmRehang(data: RehangRequest): Promise<ApiResponse<RehangConfirmResult>> {
+  return request({
+    url: '/binding/rehang-confirm',
     method: 'post',
     data
   })

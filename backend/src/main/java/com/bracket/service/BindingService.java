@@ -8,6 +8,8 @@ import com.bracket.vo.BindCheckItemVO;
 import com.bracket.vo.BindCheckResultVO;
 import com.bracket.vo.BindConfirmResultVO;
 import com.bracket.vo.BracketVO;
+import com.bracket.vo.RehangCheckResultVO;
+import com.bracket.vo.RehangConfirmResultVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -78,6 +80,144 @@ public class BindingService {
     public BindConfirmResultVO confirmBatchBind(List<Long> bracketIds, Long equipmentId) {
         BindCheckResultVO check = doCheck(deduplicate(bracketIds), equipmentId);
         return doConfirm(check, equipmentId);
+    }
+
+    /**
+     * 换线改挂预检：只允许选择源设备上已挂的支架，按目标机现行型号、长宽与容量规则逐项判定。
+     * 纯校验不写库。容量按目标机当前占用累加本次改挂占用，与批量绑定同一口径。
+     */
+    public RehangCheckResultVO checkRehang(List<Long> bracketIds, Long sourceEquipmentId, Long targetEquipmentId) {
+        return doRehangCheck(deduplicate(bracketIds), sourceEquipmentId, targetEquipmentId);
+    }
+
+    /**
+     * 改挂确认：确认前重新预检，通过项在同一事务内直接把 equipmentId 从源设备改为目标设备，
+     * 全程保持已绑定、不经过未绑定中间态；冲突项不动，仍留在源设备。
+     */
+    @Transactional
+    public RehangConfirmResultVO confirmRehang(List<Long> bracketIds, Long sourceEquipmentId, Long targetEquipmentId) {
+        RehangCheckResultVO check = doRehangCheck(deduplicate(bracketIds), sourceEquipmentId, targetEquipmentId);
+        List<Long> passedIds = check.getPassedItems().stream()
+                .map(BindCheckItemVO::getBracketId)
+                .collect(Collectors.toList());
+        List<BindCheckItemVO> conflicts = new ArrayList<>(check.getConflicts());
+        if (passedIds.isEmpty()) {
+            return new RehangConfirmResultVO(0, List.of(), conflicts);
+        }
+        List<Bracket> brackets = bracketRepository.findAllById(passedIds);
+        List<Bracket> moved = new ArrayList<>();
+        for (Bracket bracket : brackets) {
+            // 以重新预检的结果为准：仅仍挂在源设备上的通过项才允许改挂
+            if (sourceEquipmentId.equals(bracket.getEquipmentId())) {
+                bracket.setEquipmentId(targetEquipmentId);
+                moved.add(bracket);
+            }
+        }
+        List<Bracket> saved = bracketRepository.saveAll(moved);
+        List<BracketVO> voList = bracketService.convertToVOList(saved);
+        return new RehangConfirmResultVO(voList.size(), voList, conflicts);
+    }
+
+    private RehangCheckResultVO doRehangCheck(List<Long> bracketIds, Long sourceEquipmentId, Long targetEquipmentId) {
+        RehangCheckResultVO result = new RehangCheckResultVO();
+        if (sourceEquipmentId != null) {
+            result.setSourceEquipmentId(sourceEquipmentId);
+        }
+        if (targetEquipmentId != null) {
+            result.setEquipmentId(targetEquipmentId);
+        }
+
+        Equipment source = sourceEquipmentId == null ? null
+                : equipmentRepository.findById(sourceEquipmentId).orElse(null);
+        Equipment target = targetEquipmentId == null ? null
+                : equipmentRepository.findById(targetEquipmentId).orElse(null);
+
+        if (source != null) {
+            result.setSourceEquipmentCode(source.getEquipmentCode());
+            result.setSourceEquipmentName(source.getEquipmentName());
+        }
+
+        if (sourceEquipmentId == null || targetEquipmentId == null) {
+            return rehangAbort(result, 0, bracketIds.stream()
+                    .map(id -> new BindCheckItemVO(id, null, null, null, null, false, "请选择源设备和目标设备"))
+                    .collect(Collectors.toList()));
+        }
+        if (source == null) {
+            return rehangAbort(result, 0, bracketIds.stream()
+                    .map(id -> new BindCheckItemVO(id, null, null, null, null, false, "源设备不存在"))
+                    .collect(Collectors.toList()));
+        }
+        if (target == null) {
+            return rehangAbort(result, 0, bracketIds.stream()
+                    .map(id -> new BindCheckItemVO(id, null, null, null, null, false, "目标设备不存在"))
+                    .collect(Collectors.toList()));
+        }
+        if (sourceEquipmentId.equals(targetEquipmentId)) {
+            return rehangAbort(result, 0, bracketIds.stream()
+                    .map(id -> new BindCheckItemVO(id, null, null, null, null, false, "目标设备与源设备相同，无需改挂"))
+                    .collect(Collectors.toList()));
+        }
+
+        result.setEquipmentCode(target.getEquipmentCode());
+        result.setEquipmentName(target.getEquipmentName());
+        result.setMaxBrackets(target.getMaxBrackets());
+
+        List<Bracket> targetBrackets = bracketRepository.findByEquipmentId(targetEquipmentId);
+        int currentCount = targetBrackets.size();
+        result.setCurrentCount(currentCount);
+        // 本次从源设备腾出占用的通过项会在目标机新增占用；空表示不限容量
+        Integer remainingSlots = target.getMaxBrackets() == null ? null
+                : Math.max(0, target.getMaxBrackets() - currentCount);
+        result.setAvailableSlots(remainingSlots);
+
+        Map<Long, Bracket> bracketMap = bracketRepository.findAllById(bracketIds).stream()
+                .collect(Collectors.toMap(Bracket::getId, Function.identity()));
+
+        List<BindCheckItemVO> items = new ArrayList<>();
+        for (Long bracketId : bracketIds) {
+            Bracket bracket = bracketMap.get(bracketId);
+            if (bracket == null) {
+                items.add(new BindCheckItemVO(bracketId, null, null, null, null, false, "支架不存在"));
+                continue;
+            }
+            String reason;
+            if (bracket.getEquipmentId() == null) {
+                reason = "支架当前未绑定，请使用批量绑定而非改挂";
+            } else if (!sourceEquipmentId.equals(bracket.getEquipmentId())) {
+                reason = "支架未挂在源设备上，无法改挂";
+            } else {
+                reason = ruleMatcher.matchRule(target, bracket);
+                if (reason == null && remainingSlots != null) {
+                    if (remainingSlots <= 0) {
+                        reason = "超出设备最大支架数量（上限" + target.getMaxBrackets() + "个，当前已占用" + currentCount + "个）";
+                    } else {
+                        remainingSlots--;
+                    }
+                }
+            }
+            items.add(new BindCheckItemVO(
+                    bracket.getId(),
+                    bracket.getName(),
+                    bracket.getModel(),
+                    bracket.getLengthMm() != null ? bracket.getLengthMm().doubleValue() : null,
+                    bracket.getWidthMm() != null ? bracket.getWidthMm().doubleValue() : null,
+                    reason == null,
+                    reason
+            ));
+        }
+        result.setItems(items);
+        result.setPassedItems(items.stream().filter(BindCheckItemVO::getPassed).collect(Collectors.toList()));
+        result.setConflicts(items.stream().filter(i -> !i.getPassed()).collect(Collectors.toList()));
+        return result;
+    }
+
+    private RehangCheckResultVO rehangAbort(RehangCheckResultVO result, int currentCount, List<BindCheckItemVO> items) {
+        result.setCurrentCount(currentCount);
+        result.setAvailableSlots(null);
+        result.setItems(items);
+        result.setPassedItems(List.of());
+        result.setConflicts(new ArrayList<>(items));
+        return result;
     }
 
     private BindCheckResultVO doCheck(List<Long> bracketIds, Long equipmentId) {

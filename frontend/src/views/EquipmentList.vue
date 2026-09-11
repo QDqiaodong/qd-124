@@ -149,10 +149,14 @@
               v-loading="loadingBracketId === eq.id"
               style="min-height: 80px"
             >
-              <div style="display: flex; justify-content: flex-end; margin-bottom: 8px">
+              <div style="display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 8px">
                 <el-button size="small" type="success" plain @click="openBindDialog(eq)">
                   <el-icon><Link /></el-icon>
                   <span style="margin-left: 4px">绑定未配套支架</span>
+                </el-button>
+                <el-button size="small" type="primary" plain @click="goRehang(eq)">
+                  <el-icon><Switch /></el-icon>
+                  <span style="margin-left: 4px">改挂本设备支架</span>
                 </el-button>
               </div>
               <el-table
@@ -493,6 +497,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import {
   Search,
@@ -503,7 +508,8 @@ import {
   Warning,
   Setting,
   Link,
-  Close
+  Close,
+  Switch
 } from '@element-plus/icons-vue'
 import {
   getEquipmentList,
@@ -516,6 +522,8 @@ import { getBracketList, getBracketModels } from '@/api/bracket'
 import { unbindBracket, checkBind, confirmBind } from '@/api/binding'
 import type { Equipment, Bracket, EquipmentRule, BindCheckResult, RuleChangeDiagnosis, RuleImpactItem } from '@/types'
 import BindCheckDialog from '@/components/BindCheckDialog.vue'
+
+const router = useRouter()
 
 const loading = ref(false)
 const loadingBracketId = ref<number | null>(null)
@@ -612,6 +620,11 @@ const toggleExpand = (equipmentId: number) => {
       fetchEquipmentBrackets(equipmentId)
     }
   }
+}
+
+/** 换线改挂：携带源设备进入改挂页，源设备默认选中 */
+const goRehang = (eq: Equipment) => {
+  router.push({ path: '/rehang', query: { sourceId: String(eq.id) } })
 }
 
 const handleUnbind = (row: Bracket, eq: Equipment) => {

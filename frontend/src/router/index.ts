@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import BracketList from '@/views/BracketList.vue'
 import EquipmentList from '@/views/EquipmentList.vue'
 import BatchBind from '@/views/BatchBind.vue'
+import Rehang from '@/views/Rehang.vue'
 import BracketImport from '@/views/BracketImport.vue'
 
 const routes: RouteRecordRaw[] = [
@@ -22,6 +23,12 @@ const routes: RouteRecordRaw[] = [
     name: 'BatchBind',
     component: BatchBind,
     meta: { title: '批量绑定' }
+  },
+  {
+    path: '/rehang',
+    name: 'Rehang',
+    component: Rehang,
+    meta: { title: '换线改挂' }
   },
   {
     path: '/bracket-import',

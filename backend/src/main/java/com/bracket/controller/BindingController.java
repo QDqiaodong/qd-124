@@ -3,10 +3,13 @@ package com.bracket.controller;
 import com.bracket.dto.ApiResponse;
 import com.bracket.dto.BatchBindRequest;
 import com.bracket.dto.BindConfirmRequest;
+import com.bracket.dto.RehangRequest;
 import com.bracket.service.BindingService;
 import com.bracket.vo.BindCheckResultVO;
 import com.bracket.vo.BindConfirmResultVO;
 import com.bracket.vo.BracketVO;
+import com.bracket.vo.RehangCheckResultVO;
+import com.bracket.vo.RehangConfirmResultVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -71,6 +74,51 @@ public class BindingController {
             return ApiResponse.fail("请选择目标设备");
         }
         return ApiResponse.success(bindingService.confirmBatchBind(request.getBracketIds(), request.getEquipmentId()));
+    }
+
+    /**
+     * 换线改挂预检：按目标机现行型号、长宽与容量规则逐项判定源设备上的已挂支架。
+     */
+    @PostMapping("/rehang-check")
+    public ApiResponse<RehangCheckResultVO> rehangCheck(@RequestBody RehangRequest request) {
+        String invalid = validateRehangRequest(request);
+        if (invalid != null) {
+            return ApiResponse.fail(invalid);
+        }
+        return ApiResponse.success(bindingService.checkRehang(
+                request.getBracketIds(), request.getSourceEquipmentId(), request.getTargetEquipmentId()));
+    }
+
+    /**
+     * 换线改挂确认：一次性改挂通过项（始终保持已绑定，无未绑定中间态），冲突项仍留在源设备。
+     */
+    @PostMapping("/rehang-confirm")
+    public ApiResponse<RehangConfirmResultVO> rehangConfirm(@RequestBody RehangRequest request) {
+        String invalid = validateRehangRequest(request);
+        if (invalid != null) {
+            return ApiResponse.fail(invalid);
+        }
+        return ApiResponse.success(bindingService.confirmRehang(
+                request.getBracketIds(), request.getSourceEquipmentId(), request.getTargetEquipmentId()));
+    }
+
+    private String validateRehangRequest(RehangRequest request) {
+        if (request == null) {
+            return "请求参数不能为空";
+        }
+        if (request.getSourceEquipmentId() == null) {
+            return "请选择源设备";
+        }
+        if (request.getTargetEquipmentId() == null) {
+            return "请选择目标设备";
+        }
+        if (request.getSourceEquipmentId().equals(request.getTargetEquipmentId())) {
+            return "目标设备不能与源设备相同";
+        }
+        if (request.getBracketIds() == null || request.getBracketIds().isEmpty()) {
+            return "请选择需要改挂的支架";
+        }
+        return null;
     }
 
     @PostMapping("/unbind/{bracketId}")
