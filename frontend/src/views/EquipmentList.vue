@@ -723,10 +723,14 @@ const handleUnbind = (row: Bracket, eq: Equipment) => {
       try {
         await unbindBracket(row.id)
         ElMessage.success('解绑成功')
+        // 解绑成功后等待三处刷新全部完成：该机配套支架清单、设备占用角标/容量标签、页顶未绑定个数，
+        // 任一接口失败也不影响其余两处，保证页顶与角标立即按库加减，再搜该机或回档案不会看到旧数
         equipmentBracketsMap.value.delete(eq.id)
-        fetchEquipmentBrackets(eq.id)
-        fetchEquipmentList()
-        fetchUnboundCount()
+        await Promise.all([
+          fetchEquipmentBrackets(eq.id),
+          fetchEquipmentList(),
+          fetchUnboundCount()
+        ])
       } catch (error) {
         console.error('解绑失败:', error)
       }

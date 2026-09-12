@@ -534,8 +534,9 @@ const handleUnbind = (row: Bracket) => {
       try {
         await unbindBracket(row.id)
         ElMessage.success('解绑成功')
-        fetchBracketList()
-        fetchStats()
+        // 等待档案列表与统计卡片（总数/已绑定/未绑定）都刷新完成，
+        // 保证页顶未绑定个数立即 +1、该机占用立即 -1，再搜该支架或去设备配套清单不会看到旧数
+        await Promise.all([fetchBracketList(), fetchStats()])
       } catch (error) {
         console.error('解绑失败:', error)
       }
