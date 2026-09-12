@@ -2,6 +2,7 @@ package com.bracket.service;
 
 import com.bracket.dto.PageResult;
 import com.bracket.entity.Bracket;
+import com.bracket.entity.BracketRepairRecord;
 import com.bracket.entity.Equipment;
 import com.bracket.repository.BracketRepository;
 import com.bracket.repository.EquipmentRepository;
@@ -30,6 +31,7 @@ public class BracketService {
 
     private final BracketRepository bracketRepository;
     private final EquipmentRepository equipmentRepository;
+    private final BracketRepairService bracketRepairService;
     private final RedisTemplate<String, Object> redisTemplate;
 
     private static final String POPULAR_MODELS_KEY = "bracket:models:popular";
@@ -40,9 +42,12 @@ public class BracketService {
     private static final Duration POPULAR_MODELS_TTL = Duration.ofMinutes(10);
 
     @Autowired
-    public BracketService(BracketRepository bracketRepository, EquipmentRepository equipmentRepository, RedisTemplate<String, Object> redisTemplate) {
+    public BracketService(BracketRepository bracketRepository, EquipmentRepository equipmentRepository,
+                          BracketRepairService bracketRepairService,
+                          RedisTemplate<String, Object> redisTemplate) {
         this.bracketRepository = bracketRepository;
         this.equipmentRepository = equipmentRepository;
+        this.bracketRepairService = bracketRepairService;
         this.redisTemplate = redisTemplate;
     }
 
@@ -241,7 +246,7 @@ public class BracketService {
                 equipmentName = equipment.getEquipmentName();
             }
         }
-        return new BracketVO(
+        BracketVO vo = new BracketVO(
                 bracket.getId(),
                 bracket.getName(),
                 bracket.getModel(),
@@ -252,6 +257,8 @@ public class BracketService {
                 bracket.getCreateTime(),
                 bracket.getUpdateTime()
         );
+        applyRepairInfo(vo, bracketRepairService.findCurrentRecord(bracket.getId()));
+        return vo;
     }
 
     public List<BracketVO> convertToVOList(List<Bracket> brackets) {
@@ -270,6 +277,8 @@ public class BracketService {
                 equipmentNameMap.put(e.getId(), e.getEquipmentName());
             }
         }
+        List<Long> bracketIds = brackets.stream().map(Bracket::getId).collect(Collectors.toList());
+        Map<Long, BracketRepairRecord> currentRepairMap = bracketRepairService.findCurrentRecordMap(bracketIds);
         return brackets.stream()
                 .map(b -> {
                     BracketVO vo = new BracketVO();
@@ -282,8 +291,21 @@ public class BracketService {
                     vo.setEquipmentName(b.getEquipmentId() != null ? equipmentNameMap.get(b.getEquipmentId()) : null);
                     vo.setCreateTime(b.getCreateTime());
                     vo.setUpdateTime(b.getUpdateTime());
+                    applyRepairInfo(vo, currentRepairMap.get(b.getId()));
                     return vo;
                 })
                 .collect(Collectors.toList());
+    }
+
+    /** 写入支架当前返修状态：返修中/已回库合格/已回库不合格；无返修单时字段留空。 */
+    private void applyRepairInfo(BracketVO vo, BracketRepairRecord current) {
+        if (current == null) {
+            return;
+        }
+        vo.setCurrentRepairId(current.getId());
+        vo.setCurrentRepairNo(current.getRepairNo());
+        vo.setRepairStatus(BracketRepairService.resolveStatus(current));
+        vo.setReturnResult(current.getReturnResult());
+        vo.setInspector(current.getInspector());
     }
 }

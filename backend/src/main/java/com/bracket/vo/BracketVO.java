@@ -14,6 +14,17 @@ public class BracketVO {
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
+    /** 当前返修单 ID（最新一张返修单），从未返修时为空 */
+    private Long currentRepairId;
+    /** 返修单号，未返修时为空 */
+    private String currentRepairNo;
+    /** 返修状态：REPAIRING 返修中 / RETURNED_QUALIFIED 已回库合格 / RETURNED_UNQUALIFIED 已回库不合格，未返修时为空 */
+    private String repairStatus;
+    /** 回库结论：true=合格，false=不合格，返修中/未返修时为空 */
+    private Boolean returnResult;
+    /** 最近一次回库检验人，未回库时为空 */
+    private String inspector;
+
     public BracketVO() {
     }
 
@@ -99,5 +110,45 @@ public class BracketVO {
 
     public void setUpdateTime(LocalDateTime updateTime) {
         this.updateTime = updateTime;
+    }
+
+    public Long getCurrentRepairId() {
+        return currentRepairId;
+    }
+
+    public void setCurrentRepairId(Long currentRepairId) {
+        this.currentRepairId = currentRepairId;
+    }
+
+    public String getCurrentRepairNo() {
+        return currentRepairNo;
+    }
+
+    public void setCurrentRepairNo(String currentRepairNo) {
+        this.currentRepairNo = currentRepairNo;
+    }
+
+    public String getRepairStatus() {
+        return repairStatus;
+    }
+
+    public void setRepairStatus(String repairStatus) {
+        this.repairStatus = repairStatus;
+    }
+
+    public Boolean getReturnResult() {
+        return returnResult;
+    }
+
+    public void setReturnResult(Boolean returnResult) {
+        this.returnResult = returnResult;
+    }
+
+    public String getInspector() {
+        return inspector;
+    }
+
+    public void setInspector(String inspector) {
+        this.inspector = inspector;
     }
 }

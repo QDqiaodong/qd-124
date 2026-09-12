@@ -70,6 +70,20 @@
             <el-tag v-else type="warning" effect="plain" size="small">未绑定</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="返修状态" min-width="150">
+          <template #default="{ row }">
+            <el-tag v-if="row.repairStatus === 'REPAIRING'" type="warning" effect="dark" size="small">
+              返修中·未回库
+            </el-tag>
+            <el-tag v-else-if="row.repairStatus === 'RETURNED_UNQUALIFIED'" type="danger" effect="dark" size="small">
+              回库不合格
+            </el-tag>
+            <el-tag v-else-if="row.repairStatus === 'RETURNED_QUALIFIED'" type="success" effect="light" size="small">
+              已回库·合格
+            </el-tag>
+            <span v-else style="color: #94a3b8">-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="绑定设备" min-width="140">
           <template #default="{ row }">
             <span v-if="row.equipmentName">{{ row.equipmentName }}</span>
@@ -206,6 +220,9 @@
         <div>2. 选择目标设备</div>
         <div>3. 先按设备配套规则逐项校验，展示通过项与冲突原因</div>
         <div>4. 确认后仅绑定通过项，冲突项保持原绑定不变</div>
+        <div style="color: #b45309">
+          5. 返修支架必须写回库结论与检验人：返修中未回库或结论不合格的支架预检直接拦截并写明原因
+        </div>
       </div>
     </div>
 
@@ -334,6 +351,16 @@ const handleBatchCheck = async () => {
   // 换模批次硬联锁（前端提示，后端仍会强制拦截）：未写当前批次或型号不在允许清单时不允许批量挂接
   if (targetEquipment.value && targetEquipment.value.moldBatchReady === false) {
     ElMessage.error('目标封口机尚未登记有效当前模具批次，请先在「设备配套清单」完成换模登记')
+    return
+  }
+  // 返修硬联锁（前端提示，后端仍会逐项强制拦截）：返修中未回库或回库不合格的支架不能批量挂接
+  const blockedRepair = selectedBrackets.value.filter(
+    (b) => b.repairStatus === 'REPAIRING' || b.repairStatus === 'RETURNED_UNQUALIFIED'
+  )
+  if (blockedRepair.length > 0) {
+    const names = blockedRepair.slice(0, 3).map((b) => `「${b.name}」`).join('、')
+    const suffix = blockedRepair.length > 3 ? ` 等 ${blockedRepair.length} 项` : ''
+    ElMessage.error(`支架 ${names}${suffix}返修未合格回库（未写回库结论/检验人或结论不合格），不能批量挂接`)
     return
   }
 

@@ -331,6 +331,17 @@ const handleRehangCheck = async () => {
     ElMessage.error('目标封口机尚未登记有效当前模具批次，请先在「设备配套清单」完成换模登记')
     return
   }
+  // 返修硬联锁（前端提示，后端仍会逐项强制拦截）：送修必先解绑，正常改挂选不到返修支架；
+  // 数据异常时同样在此提示，预检/确认也会拦住
+  const blockedRepair = selectedBrackets.value.filter(
+    (b) => b.repairStatus === 'REPAIRING' || b.repairStatus === 'RETURNED_UNQUALIFIED'
+  )
+  if (blockedRepair.length > 0) {
+    const names = blockedRepair.slice(0, 3).map((b) => `「${b.name}」`).join('、')
+    const suffix = blockedRepair.length > 3 ? ` 等 ${blockedRepair.length} 项` : ''
+    ElMessage.error(`支架 ${names}${suffix}返修未合格回库（未写回库结论/检验人或结论不合格），不能改挂`)
+    return
+  }
 
   submitting.value = true
   try {

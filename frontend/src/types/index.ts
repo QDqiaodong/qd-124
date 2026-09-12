@@ -8,6 +8,66 @@ export interface Bracket {
   equipmentName?: string | null
   createTime?: string
   updateTime?: string
+  /** 当前返修单 ID（最新一张返修单），从未返修时为空 */
+  currentRepairId?: number | null
+  /** 当前返修单号 */
+  currentRepairNo?: string | null
+  /** 返修状态：REPAIRING 返修中 / RETURNED_QUALIFIED 已回库合格 / RETURNED_UNQUALIFIED 已回库不合格 */
+  repairStatus?: BracketRepairStatus | null
+  /** 当前返修单回库结论：true 合格 / false 不合格，返修中为空 */
+  returnResult?: boolean | null
+  /** 最近一次回库检验人 */
+  inspector?: string | null
+}
+
+/** 支架返修状态 */
+export type BracketRepairStatus = 'REPAIRING' | 'RETURNED_QUALIFIED' | 'RETURNED_UNQUALIFIED'
+
+/** 送修登记请求：解绑后的支架标记为返修 */
+export interface BracketRepairCreateRequest {
+  repairNo: string
+  repairReason?: string | null
+  repairTime?: string | null
+  repairOperator?: string | null
+}
+
+/** 回库登记请求：必须写下回库结论与检验人 */
+export interface BracketRepairReturnRequest {
+  returnResult: boolean
+  returnTime?: string | null
+  inspector: string
+  returnRemark?: string | null
+}
+
+/** 支架返修单；current=true 的最新一张为当前返修状态，也是唯一放行依据 */
+export interface BracketRepairRecord {
+  id: number
+  bracketId: number
+  bracketName?: string
+  bracketModel?: string
+  repairNo: string
+  repairReason?: string | null
+  repairTime: string
+  repairOperator?: string | null
+  returnResult?: boolean | null
+  returnTime?: string | null
+  inspector?: string | null
+  returnRemark?: string | null
+  createTime?: string
+  current: boolean
+  status: BracketRepairStatus
+}
+
+/** 返修放行闸门：返修中未回库/回库不合格时 passed=false，该支架预检判为冲突 */
+export interface BracketRepairGate {
+  passed: boolean
+  reason: string | null
+  repairRecordId?: number | null
+  repairNo?: string | null
+  status?: BracketRepairStatus
+  returnResult?: boolean | null
+  inspector?: string | null
+  returnTime?: string | null
 }
 
 export interface Equipment {
@@ -127,6 +187,8 @@ export interface BindCheckItem {
   width: number | null
   passed: boolean
   reason: string | null
+  /** 返修放行闸门（按支架逐条）；从未返修时为空 */
+  repairGate?: BracketRepairGate | null
 }
 
 export interface BindCheckResult {

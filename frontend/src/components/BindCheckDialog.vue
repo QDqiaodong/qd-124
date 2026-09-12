@@ -42,6 +42,15 @@
     />
 
     <el-alert
+      v-if="repairBlockedCount > 0"
+      :title="`${repairBlockedCount} 项支架返修未合格回库（返修中未写回库结论/检验人，或结论不合格），已逐项拦截`"
+      type="error"
+      :closable="false"
+      show-icon
+      style="margin: 12px 0"
+    />
+
+    <el-alert
       :title="`校验通过 ${result?.passedItems.length || 0} 项，冲突 ${result?.conflicts.length || 0} 项`"
       :type="(result?.conflicts.length || 0) > 0 ? 'warning' : 'success'"
       :closable="false"
@@ -128,6 +137,14 @@ const visible = computed({
 })
 
 const title = computed(() => props.title || '绑定规则校验结果')
+
+/** 返修闸门拦下的条目数（返修中未回库 / 回库不合格），用于顶部汇总提示 */
+const repairBlockedCount = computed(
+  () =>
+    (props.result?.items || []).filter(
+      (item) => item.repairGate && item.repairGate.passed === false
+    ).length
+)
 
 const handleConfirm = () => {
   emit('confirm')

@@ -90,7 +90,21 @@
             <el-tag v-else type="info" effect="plain">未绑定</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="320" fixed="right" align="center">
+        <el-table-column label="返修状态" min-width="170">
+          <template #default="{ row }">
+            <el-tag v-if="row.repairStatus === 'REPAIRING'" type="warning" effect="dark" size="small">
+              返修中（未回库）
+            </el-tag>
+            <el-tag v-else-if="row.repairStatus === 'RETURNED_UNQUALIFIED'" type="danger" effect="dark" size="small">
+              回库不合格
+            </el-tag>
+            <el-tag v-else-if="row.repairStatus === 'RETURNED_QUALIFIED'" type="success" effect="light" size="small">
+              已回库·合格
+            </el-tag>
+            <span v-else style="color: #94a3b8">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="380" fixed="right" align="center">
           <template #default="{ row }">
             <el-button size="small" type="primary" link @click="openEditDialog(row)">
               <el-icon><Edit /></el-icon>
@@ -119,6 +133,10 @@
             >
               <el-icon><Close /></el-icon>
               解绑
+            </el-button>
+            <el-button size="small" type="warning" link @click="openRepairDialog(row)">
+              <el-icon><Tools /></el-icon>
+              返修
             </el-button>
           </template>
         </el-table-column>
@@ -241,6 +259,12 @@
       :confirm-loading="confirmLoading"
       @confirm="handleCheckConfirm"
     />
+
+    <BracketRepairDialog
+      v-model="repairDialogVisible"
+      :bracket="currentRepairBracket"
+      @changed="handleRepairChanged"
+    />
   </div>
 </template>
 
@@ -255,7 +279,8 @@ import {
   Delete,
   Link,
   Close,
-  Grid
+  Grid,
+  Tools
 } from '@element-plus/icons-vue'
 import {
   getBracketList,
@@ -269,6 +294,7 @@ import { unbindBracket, checkBind, confirmBind } from '@/api/binding'
 import { useModelSuggestions } from '@/composables/useModelSuggestions'
 import type { Bracket, Equipment, BindCheckResult } from '@/types'
 import BindCheckDialog from '@/components/BindCheckDialog.vue'
+import BracketRepairDialog from '@/components/BracketRepairDialog.vue'
 
 const { modelSuggestions, refreshModelSuggestions } = useModelSuggestions()
 
@@ -515,6 +541,26 @@ const handleUnbind = (row: Bracket) => {
       }
     })
     .catch(() => {})
+}
+
+// 返修/回库：解绑后的支架可标记返修；回库结论与检验人写在返修单上，按支架可翻全部返修单
+const repairDialogVisible = ref(false)
+const currentRepairBracket = ref<Bracket | null>(null)
+
+const openRepairDialog = (row: Bracket) => {
+  // 弹窗内表单/历史以最新数据为准
+  currentRepairBracket.value = { ...row }
+  repairDialogVisible.value = true
+}
+
+const handleRepairChanged = async () => {
+  // 送修/回库成功后刷新列表与统计，档案页返修状态与未绑定数量保持一致
+  await fetchBracketList()
+  fetchStats()
+  const current = bracketList.value.find((b) => b.id === currentRepairBracket.value?.id)
+  if (current) {
+    currentRepairBracket.value = { ...current }
+  }
 }
 
 onMounted(() => {

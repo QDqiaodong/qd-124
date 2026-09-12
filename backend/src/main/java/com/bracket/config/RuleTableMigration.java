@@ -68,6 +68,28 @@ public class RuleTableMigration implements InitializingBean {
                     log.info("配套规则迁移：新建 mold_batch_record 换模批次记录表");
                 }
             }
+            if (!tableExists(metaData, "bracket_repair_record")) {
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("CREATE TABLE bracket_repair_record ("
+                            + "id BIGINT PRIMARY KEY AUTO_INCREMENT,"
+                            + "bracket_id BIGINT NOT NULL COMMENT '支架ID',"
+                            + "repair_no VARCHAR(100) NOT NULL COMMENT '返修单号',"
+                            + "repair_reason VARCHAR(500) DEFAULT NULL COMMENT '送修原因',"
+                            + "repair_time DATETIME NOT NULL COMMENT '送修时间',"
+                            + "repair_operator VARCHAR(100) DEFAULT NULL COMMENT '送修人',"
+                            + "return_result TINYINT(1) DEFAULT NULL COMMENT '回库结论：1合格/0不合格，未回库为空',"
+                            + "return_time DATETIME DEFAULT NULL COMMENT '回库时间',"
+                            + "inspector VARCHAR(100) DEFAULT NULL COMMENT '回库检验人',"
+                            + "return_remark VARCHAR(500) DEFAULT NULL COMMENT '回库备注',"
+                            + "create_time DATETIME DEFAULT CURRENT_TIMESTAMP,"
+                            + "INDEX idx_repair_bracket (bracket_id),"
+                            + "INDEX idx_repair_return_time (return_time),"
+                            + "CONSTRAINT fk_repair_bracket FOREIGN KEY (bracket_id) "
+                            + "REFERENCES bracket(id) ON DELETE CASCADE"
+                            + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='支架返修单记录表'");
+                    log.info("配套规则迁移：新建 bracket_repair_record 支架返修单记录表");
+                }
+            }
         } catch (Exception e) {
             log.error("配套规则字段迁移失败", e);
             throw new IllegalStateException("配套规则字段迁移失败: " + e.getMessage(), e);

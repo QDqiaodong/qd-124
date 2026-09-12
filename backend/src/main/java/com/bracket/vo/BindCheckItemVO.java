@@ -11,6 +11,11 @@ public class BindCheckItemVO {
     private Boolean passed;
     /** 冲突原因，通过时为空 */
     private String reason;
+    /**
+     * 返修放行闸门（按支架逐条判定）：返修中未回库/回库不合格时不通过，该条判为冲突。
+     * 从未返修的支架该字段为空，不经过返修闸门。
+     */
+    private BracketRepairGateVO repairGate;
 
     public BindCheckItemVO() {
     }
@@ -80,5 +85,13 @@ public class BindCheckItemVO {
 
     public void setReason(String reason) {
         this.reason = reason;
+    }
+
+    public BracketRepairGateVO getRepairGate() {
+        return repairGate;
+    }
+
+    public void setRepairGate(BracketRepairGateVO repairGate) {
+        this.repairGate = repairGate;
     }
 }

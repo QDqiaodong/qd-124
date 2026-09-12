@@ -50,6 +50,15 @@
     />
 
     <el-alert
+      v-if="repairBlockedCount > 0"
+      :title="`${repairBlockedCount} 项支架返修未合格回库（返修中未写回库结论/检验人，或结论不合格），已逐项拦截`"
+      type="error"
+      :closable="false"
+      show-icon
+      style="margin: 12px 0"
+    />
+
+    <el-alert
       :title="`预检通过 ${result?.passedItems.length || 0} 项，冲突 ${result?.conflicts.length || 0} 项`"
       :type="(result?.conflicts.length || 0) > 0 ? 'warning' : 'success'"
       :closable="false"

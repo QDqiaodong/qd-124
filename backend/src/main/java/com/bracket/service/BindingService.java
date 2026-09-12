@@ -1,12 +1,14 @@
 package com.bracket.service;
 
 import com.bracket.entity.Bracket;
+import com.bracket.entity.BracketRepairRecord;
 import com.bracket.entity.Equipment;
 import com.bracket.repository.BracketRepository;
 import com.bracket.repository.EquipmentRepository;
 import com.bracket.vo.BindCheckItemVO;
 import com.bracket.vo.BindCheckResultVO;
 import com.bracket.vo.BindConfirmResultVO;
+import com.bracket.vo.BracketRepairGateVO;
 import com.bracket.vo.BracketVO;
 import com.bracket.vo.MoldBatchGateVO;
 import com.bracket.vo.RehangCheckResultVO;
@@ -31,16 +33,19 @@ public class BindingService {
     private final BracketService bracketService;
     private final RuleMatcher ruleMatcher;
     private final MoldBatchService moldBatchService;
+    private final BracketRepairService bracketRepairService;
 
     @Autowired
     public BindingService(BracketRepository bracketRepository, EquipmentRepository equipmentRepository,
                           BracketService bracketService, RuleMatcher ruleMatcher,
-                          MoldBatchService moldBatchService) {
+                          MoldBatchService moldBatchService,
+                          BracketRepairService bracketRepairService) {
         this.bracketRepository = bracketRepository;
         this.equipmentRepository = equipmentRepository;
         this.bracketService = bracketService;
         this.ruleMatcher = ruleMatcher;
         this.moldBatchService = moldBatchService;
+        this.bracketRepairService = bracketRepairService;
     }
 
     @Transactional
@@ -55,14 +60,15 @@ public class BindingService {
     }
 
     /**
-     * 单个绑定前的配套规则校验。单个绑定不走换模批次闸门（批量挂接与换线改挂才强制）。
+     * 单个绑定前的配套规则校验。单个绑定不走换模批次闸门与返修闸门（批量挂接与换线改挂才强制）。
      */
     public BindCheckResultVO checkBind(Long bracketId, Long equipmentId) {
         return doCheck(List.of(bracketId), equipmentId, false);
     }
 
     /**
-     * 批量绑定前的配套规则校验。换模批次未就绪（未写当前批次或型号不在允许清单）时整单拦截。
+     * 批量绑定前的配套规则校验。换模批次未就绪（未写当前批次或型号不在允许清单）时整单拦截；
+     * 返修中未回库或回库结论不合格的支架逐条拦截。
      */
     public BindCheckResultVO checkBatchBind(List<Long> bracketIds, Long equipmentId) {
         return doCheck(deduplicate(bracketIds), equipmentId, true);
@@ -193,11 +199,16 @@ public class BindingService {
                 items.add(new BindCheckItemVO(bracketId, null, null, null, null, false, "支架不存在"));
                 continue;
             }
+            BracketRepairGateVO repairGate = bracketRepairService.evaluateGate(bracket);
             String reason;
             if (bracket.getEquipmentId() == null) {
                 reason = "支架当前未绑定，请使用批量绑定而非改挂";
             } else if (!sourceEquipmentId.equals(bracket.getEquipmentId())) {
                 reason = "支架未挂在源设备上，无法改挂";
+            } else if (repairGate != null && !Boolean.TRUE.equals(repairGate.getPassed())) {
+                // 返修放行闸门：改挂只允许选择源设备上已挂支架，送修必先解绑，正常不会命中；
+                // 数据异常（返修单未回库/回库不合格）时同样硬拦截，无法绕过预检。
+                reason = repairGate.getReason();
             } else {
                 reason = ruleMatcher.matchRule(target, bracket);
                 if (reason == null && remainingSlots != null) {
@@ -208,7 +219,7 @@ public class BindingService {
                     }
                 }
             }
-            items.add(new BindCheckItemVO(
+            BindCheckItemVO item = new BindCheckItemVO(
                     bracket.getId(),
                     bracket.getName(),
                     bracket.getModel(),
@@ -216,7 +227,9 @@ public class BindingService {
                     bracket.getWidthMm() != null ? bracket.getWidthMm().doubleValue() : null,
                     reason == null,
                     reason
-            ));
+            );
+            item.setRepairGate(repairGate);
+            items.add(item);
         }
         result.setItems(items);
         result.setPassedItems(items.stream().filter(BindCheckItemVO::getPassed).collect(Collectors.toList()));
@@ -233,7 +246,7 @@ public class BindingService {
         return result;
     }
 
-    private BindCheckResultVO doCheck(List<Long> bracketIds, Long equipmentId, boolean enforceMoldBatchGate) {
+    private BindCheckResultVO doCheck(List<Long> bracketIds, Long equipmentId, boolean enforceBatchGates) {
         Equipment equipment = equipmentId == null ? null
                 : equipmentRepository.findById(equipmentId).orElse(null);
         BindCheckResultVO result = new BindCheckResultVO();
@@ -256,7 +269,7 @@ public class BindingService {
         // 换模批次放行闸门（仅批量挂接强制）：未写当前批次或型号不在允许清单，整单判为冲突拦截
         MoldBatchGateVO gate = moldBatchService.evaluateGate(equipment);
         result.setMoldBatchGate(gate);
-        if (enforceMoldBatchGate && !Boolean.TRUE.equals(gate.getPassed())) {
+        if (enforceBatchGates && !Boolean.TRUE.equals(gate.getPassed())) {
             result.setCurrentCount(bracketRepository.findByEquipmentId(equipmentId).size());
             result.setAvailableSlots(null);
             List<BindCheckItemVO> blocked = bracketIds.stream()
@@ -290,7 +303,17 @@ public class BindingService {
                 items.add(new BindCheckItemVO(bracketId, null, null, null, null, false, "支架不存在"));
                 continue;
             }
-            String reason = ruleMatcher.matchRule(equipment, bracket);
+            BracketRepairGateVO repairGate = enforceBatchGates
+                    ? bracketRepairService.evaluateGate(bracket) : null;
+            String reason = null;
+            // 返修放行闸门（仅批量挂接强制，单个绑定不走）：返修中未回库/回库不合格直接判冲突，
+            // 写明原因，且不占用容量、不进入型号尺寸判定。
+            if (repairGate != null && !Boolean.TRUE.equals(repairGate.getPassed())) {
+                reason = repairGate.getReason();
+            }
+            if (reason == null) {
+                reason = ruleMatcher.matchRule(equipment, bracket);
+            }
             if (reason == null && !alreadyOnEquipment.contains(bracketId)) {
                 if (remainingSlots != null && remainingSlots <= 0) {
                     reason = "超出设备最大支架数量（上限" + equipment.getMaxBrackets() + "个，当前已占用" + currentCount + "个）";
@@ -298,7 +321,7 @@ public class BindingService {
                     remainingSlots--;
                 }
             }
-            items.add(new BindCheckItemVO(
+            BindCheckItemVO item = new BindCheckItemVO(
                     bracket.getId(),
                     bracket.getName(),
                     bracket.getModel(),
@@ -306,7 +329,9 @@ public class BindingService {
                     bracket.getWidthMm() != null ? bracket.getWidthMm().doubleValue() : null,
                     reason == null,
                     reason
-            ));
+            );
+            item.setRepairGate(repairGate);
+            items.add(item);
         }
         result.setItems(items);
         result.setPassedItems(items.stream().filter(BindCheckItemVO::getPassed).collect(Collectors.toList()));

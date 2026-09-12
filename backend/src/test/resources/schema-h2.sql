@@ -35,5 +35,21 @@ CREATE TABLE IF NOT EXISTS mold_batch_record (
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS bracket_repair_record (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    bracket_id BIGINT NOT NULL,
+    repair_no VARCHAR(100) NOT NULL,
+    repair_reason VARCHAR(500) DEFAULT NULL,
+    repair_time TIMESTAMP NOT NULL,
+    repair_operator VARCHAR(100) DEFAULT NULL,
+    return_result BOOLEAN DEFAULT NULL,
+    return_time TIMESTAMP DEFAULT NULL,
+    inspector VARCHAR(100) DEFAULT NULL,
+    return_remark VARCHAR(500) DEFAULT NULL,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_mold_batch_equipment ON mold_batch_record (equipment_id);
 CREATE INDEX IF NOT EXISTS idx_mold_batch_change_time ON mold_batch_record (change_time);
+CREATE INDEX IF NOT EXISTS idx_repair_bracket ON bracket_repair_record (bracket_id);
+CREATE INDEX IF NOT EXISTS idx_repair_return_time ON bracket_repair_record (return_time);
