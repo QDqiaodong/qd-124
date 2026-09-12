@@ -31,6 +31,10 @@ public class Equipment {
     @Column(name = "allowed_mold_models", length = 1000)
     private String allowedMoldModels;
 
+    /** 当班润滑要求点数：本班润滑单完成点数达到该值才放行批量挂接/换线改挂；空表示未维护（不允许登记/不放行）。 */
+    @Column(name = "required_lubrication_points")
+    private Integer requiredLubricationPoints;
+
     @Column(name = "min_length", precision = 10, scale = 2)
     private BigDecimal minLength;
 
@@ -100,6 +104,14 @@ public class Equipment {
 
     public void setAllowedMoldModels(String allowedMoldModels) {
         this.allowedMoldModels = allowedMoldModels;
+    }
+
+    public Integer getRequiredLubricationPoints() {
+        return requiredLubricationPoints;
+    }
+
+    public void setRequiredLubricationPoints(Integer requiredLubricationPoints) {
+        this.requiredLubricationPoints = requiredLubricationPoints;
     }
 
     public BigDecimal getMinLength() {
