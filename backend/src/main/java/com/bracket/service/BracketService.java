@@ -7,11 +7,17 @@ import com.bracket.entity.Equipment;
 import com.bracket.repository.BracketRepository;
 import com.bracket.repository.EquipmentRepository;
 import com.bracket.vo.BracketVO;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +25,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,43 +58,102 @@ public class BracketService {
         this.redisTemplate = redisTemplate;
     }
 
-    public PageResult<BracketVO> findAll(String name, String model, Integer bindStatus, Pageable pageable) {
-        Page<Bracket> page;
-        boolean hasName = name != null && !name.trim().isEmpty();
-        boolean hasModel = model != null && !model.trim().isEmpty();
-        boolean onlyUnbound = bindStatus != null && bindStatus == 0;
-        boolean onlyBound = bindStatus != null && bindStatus == 1;
-        if (onlyUnbound) {
-            if (hasName && hasModel) {
-                page = bracketRepository.findByNameContainingAndModelContainingAndEquipmentIdIsNull(name, model, pageable);
-            } else if (hasName) {
-                page = bracketRepository.findByNameContainingAndEquipmentIdIsNull(name, pageable);
-            } else if (hasModel) {
-                page = bracketRepository.findByModelContainingAndEquipmentIdIsNull(model, pageable);
-            } else {
-                page = bracketRepository.findByEquipmentIdIsNull(pageable);
+    /**
+     * 支架档案分页查询。
+     *
+     * 返修状态过滤只认每个支架「当前返修单」（送修时间最新的一张，同时间以 ID 大者为准），
+     * 与返修放行闸门同一口径：
+     * REPAIRING=当前单未写回库结论；RETURNED_UNQUALIFIED=当前单结论不合格；
+     * RETURNED_QUALIFIED=当前单结论合格；无当前单（从未返修）不属于任何一种状态。
+     * 旧返修单已被更新的返修单覆盖时，即使历史上有过不合格结论也不再命中，
+     * 避免"已回库合格的支架仍出现在回库不合格列表"。
+     */
+    public PageResult<BracketVO> findAll(String name, String model, Integer bindStatus,
+                                         String repairStatus, Pageable pageable) {
+        final String nameParam = name;
+        final String modelParam = model;
+        final Integer bindStatusParam = bindStatus;
+        final String statusParam = normalizeRepairStatus(repairStatus);
+
+        Specification<Bracket> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            if (nameParam != null && !nameParam.trim().isEmpty()) {
+                predicates.add(cb.like(root.get("name"), "%" + nameParam + "%"));
             }
-        } else if (onlyBound) {
-            if (hasName && hasModel) {
-                page = bracketRepository.findByNameContainingAndModelContainingAndEquipmentIdIsNotNull(name, model, pageable);
-            } else if (hasName) {
-                page = bracketRepository.findByNameContainingAndEquipmentIdIsNotNull(name, pageable);
-            } else if (hasModel) {
-                page = bracketRepository.findByModelContainingAndEquipmentIdIsNotNull(model, pageable);
-            } else {
-                page = bracketRepository.findByEquipmentIdIsNotNull(pageable);
+            if (modelParam != null && !modelParam.trim().isEmpty()) {
+                predicates.add(cb.like(root.get("model"), "%" + modelParam + "%"));
             }
-        } else if (!hasName && !hasModel) {
-            page = bracketRepository.findAll(pageable);
-        } else if (hasName && !hasModel) {
-            page = bracketRepository.findByNameContaining(name, pageable);
-        } else if (!hasName) {
-            page = bracketRepository.findByModelContaining(model, pageable);
-        } else {
-            page = bracketRepository.findByNameContainingAndModelContaining(name, model, pageable);
-        }
+            if (bindStatusParam != null && bindStatusParam == 0) {
+                predicates.add(cb.isNull(root.get("equipmentId")));
+            } else if (bindStatusParam != null && bindStatusParam == 1) {
+                predicates.add(cb.isNotNull(root.get("equipmentId")));
+            }
+            if (statusParam != null) {
+                predicates.add(currentRepairStatusPredicate(root, query, cb, statusParam));
+            }
+
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+
+        Page<Bracket> page = bracketRepository.findAll(spec, pageable);
         List<BracketVO> voList = convertToVOList(page.getContent());
         return new PageResult<>(voList, page.getTotalElements(), page.getNumber() + 1, page.getSize());
+    }
+
+    /** 只放行三种已知返修状态；未知/空白值视为不过滤，避免非法参数导致空结果或报错。 */
+    private String normalizeRepairStatus(String repairStatus) {
+        if (repairStatus == null) {
+            return null;
+        }
+        String trimmed = repairStatus.trim();
+        return switch (trimmed) {
+            case BracketRepairService.STATUS_REPAIRING,
+                 BracketRepairService.STATUS_RETURNED_QUALIFIED,
+                 BracketRepairService.STATUS_RETURNED_UNQUALIFIED -> trimmed;
+            default -> null;
+        };
+    }
+
+    /**
+     * 构造「当前返修单状态 = statusParam」的断言。
+     * 存在一张返修单 r：属于该支架、不存在比它更新的返修单、且 r 的结论符合目标状态。
+     * 返修中=return_result IS NULL；合格/不合格=return_result = TRUE/FALSE。
+     */
+    private Predicate currentRepairStatusPredicate(
+            jakarta.persistence.criteria.Root<Bracket> root,
+            jakarta.persistence.criteria.CriteriaQuery<?> query,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            String statusParam) {
+        Subquery<BracketRepairRecord> currentSub = query.subquery(BracketRepairRecord.class);
+        jakarta.persistence.criteria.Root<BracketRepairRecord> r =
+                currentSub.from(BracketRepairRecord.class);
+        currentSub.select(r);
+
+        // 不存在更新的返修单：送修时间更晚，或同时间 ID 更大（与 findFirst...IdDesc 兜底一致）
+        Subquery<Long> newerSub = currentSub.subquery(Long.class);
+        jakarta.persistence.criteria.Root<BracketRepairRecord> newer =
+                newerSub.from(BracketRepairRecord.class);
+        newerSub.select(newer.get("id"))
+                .where(cb.and(
+                        cb.equal(newer.get("bracketId"), root.get("id")),
+                        cb.or(
+                                cb.greaterThan(newer.get("repairTime"), r.get("repairTime")),
+                                cb.and(
+                                        cb.equal(newer.get("repairTime"), r.get("repairTime")),
+                                        cb.greaterThan(newer.get("id"), r.get("id"))
+                                )
+                        )
+                ));
+        currentSub.where(cb.and(
+                cb.equal(r.get("bracketId"), root.get("id")),
+                cb.not(cb.exists(newerSub)),
+                BracketRepairService.STATUS_REPAIRING.equals(statusParam)
+                        ? cb.isNull(r.get("returnResult"))
+                        : cb.equal(r.get("returnResult"),
+                        BracketRepairService.STATUS_RETURNED_QUALIFIED.equals(statusParam))
+        ));
+        return cb.exists(currentSub);
     }
 
     public BracketVO findById(Long id) {

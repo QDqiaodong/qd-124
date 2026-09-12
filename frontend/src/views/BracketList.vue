@@ -58,6 +58,17 @@
             <el-icon><Search /></el-icon>
           </template>
         </el-input>
+        <el-select
+          v-model="searchRepairStatus"
+          placeholder="返修状态"
+          clearable
+          style="width: 170px"
+          @change="handleSearch"
+        >
+          <el-option label="返修中（未回库）" value="REPAIRING" />
+          <el-option label="回库不合格" value="RETURNED_UNQUALIFIED" />
+          <el-option label="已回库·合格" value="RETURNED_QUALIFIED" />
+        </el-select>
         <el-button type="primary" @click="handleSearch">
           <el-icon><Search /></el-icon>
           <span>搜索</span>
@@ -292,7 +303,7 @@ import {
 import { getAllEquipment } from '@/api/equipment'
 import { unbindBracket, checkBind, confirmBind } from '@/api/binding'
 import { useModelSuggestions } from '@/composables/useModelSuggestions'
-import type { Bracket, Equipment, BindCheckResult } from '@/types'
+import type { Bracket, Equipment, BindCheckResult, BracketRepairStatus } from '@/types'
 import BindCheckDialog from '@/components/BindCheckDialog.vue'
 import BracketRepairDialog from '@/components/BracketRepairDialog.vue'
 
@@ -301,6 +312,8 @@ const { modelSuggestions, refreshModelSuggestions } = useModelSuggestions()
 const loading = ref(false)
 const searchName = ref('')
 const searchModel = ref('')
+// 返修状态筛选；只传当前返修单状态，清空时为 undefined（不传该参数）
+const searchRepairStatus = ref<BracketRepairStatus | ''>('')
 
 const stats = reactive({
   total: 0,
@@ -335,7 +348,8 @@ const fetchBracketList = async () => {
       pageNum: pagination.pageNum,
       pageSize: pagination.pageSize,
       name: searchName.value || undefined,
-      model: searchModel.value || undefined
+      model: searchModel.value || undefined,
+      repairStatus: searchRepairStatus.value || undefined
     })
     if (res.data) {
       bracketList.value = res.data.list
@@ -356,6 +370,7 @@ const handleSearch = () => {
 const handleReset = () => {
   searchName.value = ''
   searchModel.value = ''
+  searchRepairStatus.value = ''
   pagination.pageNum = 1
   fetchBracketList()
 }

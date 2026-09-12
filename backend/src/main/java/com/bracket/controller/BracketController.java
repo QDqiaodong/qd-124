@@ -32,9 +32,10 @@ public class BracketController {
             @RequestParam(defaultValue = "10") int pageSize,
             @RequestParam(required = false) String name,
             @RequestParam(required = false) String model,
-            @RequestParam(required = false) Integer bindStatus) {
+            @RequestParam(required = false) Integer bindStatus,
+            @RequestParam(required = false) String repairStatus) {
         Pageable pageable = PageRequest.of(pageNum - 1, pageSize, Sort.by(Sort.Direction.DESC, "createTime"));
-        return ApiResponse.success(bracketService.findAll(name, model, bindStatus, pageable));
+        return ApiResponse.success(bracketService.findAll(name, model, bindStatus, repairStatus, pageable));
     }
 
     @GetMapping("/{id}")

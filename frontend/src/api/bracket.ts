@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { ApiResponse, PageResponse, Bracket } from '@/types'
+import type { ApiResponse, PageResponse, Bracket, BracketRepairStatus } from '@/types'
 
 export function getBracketList(params: {
   pageNum: number
@@ -7,6 +7,8 @@ export function getBracketList(params: {
   name?: string
   model?: string
   bindStatus?: number
+  /** 按当前返修单状态过滤：REPAIRING / RETURNED_QUALIFIED / RETURNED_UNQUALIFIED */
+  repairStatus?: BracketRepairStatus
 }): Promise<ApiResponse<PageResponse<Bracket>>> {
   return request({
     url: '/bracket/list',
