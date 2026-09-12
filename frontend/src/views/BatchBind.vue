@@ -353,17 +353,8 @@ const handleBatchCheck = async () => {
     ElMessage.error('目标封口机尚未登记有效当前模具批次，请先在「设备配套清单」完成换模登记')
     return
   }
-  // 返修硬联锁（前端提示，后端仍会逐项强制拦截）：返修中未回库或回库不合格的支架不能批量挂接
-  const blockedRepair = selectedBrackets.value.filter(
-    (b) => b.repairStatus === 'REPAIRING' || b.repairStatus === 'RETURNED_UNQUALIFIED'
-  )
-  if (blockedRepair.length > 0) {
-    const names = blockedRepair.slice(0, 3).map((b) => `「${b.name}」`).join('、')
-    const suffix = blockedRepair.length > 3 ? ` 等 ${blockedRepair.length} 项` : ''
-    ElMessage.error(`支架 ${names}${suffix}返修未合格回库（未写回库结论/检验人或结论不合格），不能批量挂接`)
-    return
-  }
-
+  // 返修支架（返修中未回库 / 回库不合格）不在前端提前拦截：照常发起预检，由后端返修闸门逐项判为冲突，
+  // 在预检弹窗顶部汇总返修拦截条数、表格逐条写明原因；确认接口后端同样硬校验，不会放行。
   submitting.value = true
   try {
     const res = await checkBatchBind({

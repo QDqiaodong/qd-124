@@ -51,6 +51,9 @@ class BracketServiceTest {
     private EquipmentRepository equipmentRepository;
 
     @Mock
+    private BracketRepairService bracketRepairService;
+
+    @Mock
     private RedisTemplate<String, Object> redisTemplate;
 
     @Mock
