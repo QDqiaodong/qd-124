@@ -12,6 +12,15 @@
         <span class="summary-value">{{ result.equipmentCode }} - {{ result.equipmentName }}</span>
       </div>
       <div class="rule-summary-item">
+        <span class="summary-label">当前模具批次</span>
+        <span class="summary-value" :style="result.moldBatchGate?.passed ? 'color:#16a34a' : 'color:#dc2626'">
+          <template v-if="result.moldBatchGate?.passed">
+            {{ result.moldBatchGate.currentBatchNo }}（{{ result.moldBatchGate.currentMoldModel }}）
+          </template>
+          <template v-else>未就绪·已拦截</template>
+        </span>
+      </div>
+      <div class="rule-summary-item">
         <span class="summary-label">当前占用</span>
         <span class="summary-value">
           {{ result.currentCount }}<template v-if="result.maxBrackets != null"> / {{ result.maxBrackets }}</template><span v-else>（不限容量）</span> 个
@@ -22,6 +31,15 @@
         <span class="summary-value">{{ result.availableSlots }} 个</span>
       </div>
     </div>
+
+    <el-alert
+      v-if="result?.moldBatchGate && !result.moldBatchGate.passed"
+      :title="result.moldBatchGate.reason || '换模批次未就绪，整单拦截'"
+      type="error"
+      :closable="false"
+      show-icon
+      style="margin: 12px 0"
+    />
 
     <el-alert
       :title="`校验通过 ${result?.passedItems.length || 0} 项，冲突 ${result?.conflicts.length || 0} 项`"

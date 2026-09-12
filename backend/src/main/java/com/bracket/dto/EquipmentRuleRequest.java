@@ -8,6 +8,9 @@ public class EquipmentRuleRequest {
     /** 允许型号，逗号分隔；空表示不限制 */
     private String allowedModels;
 
+    /** 允许模具型号，逗号分隔；换模登记的批次模具型号必须在此清单内 */
+    private String allowedMoldModels;
+
     /** 最小长度(mm)，空表示不限制 */
     private Double minLength;
 
@@ -34,6 +37,14 @@ public class EquipmentRuleRequest {
 
     public void setAllowedModels(String allowedModels) {
         this.allowedModels = allowedModels;
+    }
+
+    public String getAllowedMoldModels() {
+        return allowedMoldModels;
+    }
+
+    public void setAllowedMoldModels(String allowedMoldModels) {
+        this.allowedMoldModels = allowedMoldModels;
     }
 
     public Double getMinLength() {

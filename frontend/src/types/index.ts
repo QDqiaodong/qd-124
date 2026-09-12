@@ -17,12 +17,24 @@ export interface Equipment {
   bracketCount?: number
   maxBrackets?: number | null
   allowedModels?: string[]
+  /** 允许在本机登记使用的模具型号清单 */
+  allowedMoldModels?: string[]
   minLength?: number | null
   maxLength?: number | null
   minWidth?: number | null
   maxWidth?: number | null
   ruleConfigured?: boolean
   capacityStatus?: 'normal' | 'full' | 'exceeded' | 'unlimited'
+  /** 当前模具批次 ID（最新一次换模登记），未登记时为空 */
+  currentBatchId?: number | null
+  /** 当前模具批次号，未登记时为空 */
+  currentBatchNo?: string | null
+  /** 当前模具型号，未登记时为空 */
+  currentMoldModel?: string | null
+  /** 当前批次换模时间 */
+  currentBatchChangeTime?: string | null
+  /** 换模批次放行是否就绪：已登记当前批次且型号在允许清单内 */
+  moldBatchReady?: boolean
   createTime?: string
   updateTime?: string
 }
@@ -30,10 +42,45 @@ export interface Equipment {
 export interface EquipmentRule {
   maxBrackets?: number | null
   allowedModels?: string
+  /** 允许模具型号，逗号分隔；换模登记的批次模具型号必须在此清单内 */
+  allowedMoldModels?: string
   minLength?: number | null
   maxLength?: number | null
   minWidth?: number | null
   maxWidth?: number | null
+}
+
+/** 换模批次登记请求 */
+export interface MoldBatchRegisterRequest {
+  batchNo: string
+  moldModel: string
+  changeTime?: string | null
+  operator?: string | null
+  remark?: string | null
+}
+
+/** 换模批次记录；current=true 的最新一条为当前批次，也是唯一放行依据 */
+export interface MoldBatchRecord {
+  id: number
+  equipmentId: number
+  equipmentCode?: string
+  equipmentName?: string
+  batchNo: string
+  moldModel: string
+  changeTime: string
+  operator?: string | null
+  remark?: string | null
+  createTime?: string
+  current: boolean
+}
+
+/** 换模批次放行闸门：未写批次/型号不在允许清单时 passed=false，整单拦截 */
+export interface MoldBatchGate {
+  passed: boolean
+  reason: string | null
+  currentBatchId?: number | null
+  currentBatchNo?: string | null
+  currentMoldModel?: string | null
 }
 
 /** 规则变更对单条已绑定支架的影响类型 */
@@ -92,6 +139,8 @@ export interface BindCheckResult {
   items: BindCheckItem[]
   passedItems: BindCheckItem[]
   conflicts: BindCheckItem[]
+  /** 换模批次放行闸门；批量挂接/换线改挂不通过时整单拦截 */
+  moldBatchGate?: MoldBatchGate
 }
 
 export interface BindConfirmResult {

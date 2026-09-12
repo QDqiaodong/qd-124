@@ -8,6 +8,7 @@ import com.bracket.vo.BindCheckItemVO;
 import com.bracket.vo.BindCheckResultVO;
 import com.bracket.vo.BindConfirmResultVO;
 import com.bracket.vo.BracketVO;
+import com.bracket.vo.MoldBatchGateVO;
 import com.bracket.vo.RehangCheckResultVO;
 import com.bracket.vo.RehangConfirmResultVO;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,14 +30,17 @@ public class BindingService {
     private final EquipmentRepository equipmentRepository;
     private final BracketService bracketService;
     private final RuleMatcher ruleMatcher;
+    private final MoldBatchService moldBatchService;
 
     @Autowired
     public BindingService(BracketRepository bracketRepository, EquipmentRepository equipmentRepository,
-                          BracketService bracketService, RuleMatcher ruleMatcher) {
+                          BracketService bracketService, RuleMatcher ruleMatcher,
+                          MoldBatchService moldBatchService) {
         this.bracketRepository = bracketRepository;
         this.equipmentRepository = equipmentRepository;
         this.bracketService = bracketService;
         this.ruleMatcher = ruleMatcher;
+        this.moldBatchService = moldBatchService;
     }
 
     @Transactional
@@ -51,17 +55,17 @@ public class BindingService {
     }
 
     /**
-     * 单个绑定前的配套规则校验。
+     * 单个绑定前的配套规则校验。单个绑定不走换模批次闸门（批量挂接与换线改挂才强制）。
      */
     public BindCheckResultVO checkBind(Long bracketId, Long equipmentId) {
-        return doCheck(List.of(bracketId), equipmentId);
+        return doCheck(List.of(bracketId), equipmentId, false);
     }
 
     /**
-     * 批量绑定前的配套规则校验。
+     * 批量绑定前的配套规则校验。换模批次未就绪（未写当前批次或型号不在允许清单）时整单拦截。
      */
     public BindCheckResultVO checkBatchBind(List<Long> bracketIds, Long equipmentId) {
-        return doCheck(deduplicate(bracketIds), equipmentId);
+        return doCheck(deduplicate(bracketIds), equipmentId, true);
     }
 
     /**
@@ -69,16 +73,16 @@ public class BindingService {
      */
     @Transactional
     public BindConfirmResultVO confirmBind(Long bracketId, Long equipmentId) {
-        BindCheckResultVO check = doCheck(List.of(bracketId), equipmentId);
+        BindCheckResultVO check = doCheck(List.of(bracketId), equipmentId, false);
         return doConfirm(check, equipmentId);
     }
 
     /**
-     * 批量绑定确认：确认前重新校验，仅绑定通过项。
+     * 批量绑定确认：确认前重新校验（含换模批次闸门），仅绑定通过项。
      */
     @Transactional
     public BindConfirmResultVO confirmBatchBind(List<Long> bracketIds, Long equipmentId) {
-        BindCheckResultVO check = doCheck(deduplicate(bracketIds), equipmentId);
+        BindCheckResultVO check = doCheck(deduplicate(bracketIds), equipmentId, true);
         return doConfirm(check, equipmentId);
     }
 
@@ -162,6 +166,15 @@ public class BindingService {
         result.setEquipmentName(target.getEquipmentName());
         result.setMaxBrackets(target.getMaxBrackets());
 
+        // 换模批次放行闸门：目标机未写当前批次或批次型号不在允许清单时，整单拦截，不允许改挂
+        MoldBatchGateVO gate = moldBatchService.evaluateGate(target);
+        result.setMoldBatchGate(gate);
+        if (!Boolean.TRUE.equals(gate.getPassed())) {
+            return rehangAbort(result, 0, bracketIds.stream()
+                    .map(id -> new BindCheckItemVO(id, null, null, null, null, false, gate.getReason()))
+                    .collect(Collectors.toList()));
+        }
+
         List<Bracket> targetBrackets = bracketRepository.findByEquipmentId(targetEquipmentId);
         int currentCount = targetBrackets.size();
         result.setCurrentCount(currentCount);
@@ -220,7 +233,7 @@ public class BindingService {
         return result;
     }
 
-    private BindCheckResultVO doCheck(List<Long> bracketIds, Long equipmentId) {
+    private BindCheckResultVO doCheck(List<Long> bracketIds, Long equipmentId, boolean enforceMoldBatchGate) {
         Equipment equipment = equipmentId == null ? null
                 : equipmentRepository.findById(equipmentId).orElse(null);
         BindCheckResultVO result = new BindCheckResultVO();
@@ -239,6 +252,21 @@ public class BindingService {
         result.setEquipmentCode(equipment.getEquipmentCode());
         result.setEquipmentName(equipment.getEquipmentName());
         result.setMaxBrackets(equipment.getMaxBrackets());
+
+        // 换模批次放行闸门（仅批量挂接强制）：未写当前批次或型号不在允许清单，整单判为冲突拦截
+        MoldBatchGateVO gate = moldBatchService.evaluateGate(equipment);
+        result.setMoldBatchGate(gate);
+        if (enforceMoldBatchGate && !Boolean.TRUE.equals(gate.getPassed())) {
+            result.setCurrentCount(bracketRepository.findByEquipmentId(equipmentId).size());
+            result.setAvailableSlots(null);
+            List<BindCheckItemVO> blocked = bracketIds.stream()
+                    .map(id -> new BindCheckItemVO(id, null, null, null, null, false, gate.getReason()))
+                    .collect(Collectors.toList());
+            result.setItems(blocked);
+            result.setPassedItems(List.of());
+            result.setConflicts(new ArrayList<>(blocked));
+            return result;
+        }
 
         List<Bracket> boundBrackets = bracketRepository.findByEquipmentId(equipmentId);
         int currentCount = boundBrackets.size();

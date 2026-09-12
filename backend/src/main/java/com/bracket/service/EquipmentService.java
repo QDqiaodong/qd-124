@@ -4,10 +4,12 @@ import com.bracket.dto.EquipmentRuleRequest;
 import com.bracket.dto.PageResult;
 import com.bracket.entity.Bracket;
 import com.bracket.entity.Equipment;
+import com.bracket.entity.MoldBatchRecord;
 import com.bracket.repository.BracketRepository;
 import com.bracket.repository.EquipmentRepository;
 import com.bracket.vo.BracketVO;
 import com.bracket.vo.EquipmentVO;
+import com.bracket.vo.MoldBatchGateVO;
 import com.bracket.vo.RuleChangeDiagnosisVO;
 import com.bracket.vo.RuleImpactItemVO;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,14 +34,17 @@ public class EquipmentService {
     private final BracketRepository bracketRepository;
     private final BracketService bracketService;
     private final RuleMatcher ruleMatcher;
+    private final MoldBatchService moldBatchService;
 
     @Autowired
     public EquipmentService(EquipmentRepository equipmentRepository, BracketRepository bracketRepository,
-                            BracketService bracketService, RuleMatcher ruleMatcher) {
+                            BracketService bracketService, RuleMatcher ruleMatcher,
+                            MoldBatchService moldBatchService) {
         this.equipmentRepository = equipmentRepository;
         this.bracketRepository = bracketRepository;
         this.bracketService = bracketService;
         this.ruleMatcher = ruleMatcher;
+        this.moldBatchService = moldBatchService;
     }
 
     public PageResult<EquipmentVO> findAll(String code, String name, Pageable pageable) {
@@ -166,6 +171,7 @@ public class EquipmentService {
     private void applyRule(Equipment equipment, EquipmentRuleRequest request) {
         equipment.setMaxBrackets(request.getMaxBrackets());
         equipment.setAllowedModels(normalizeModels(request.getAllowedModels()));
+        equipment.setAllowedMoldModels(MoldBatchService.normalizeMoldModels(request.getAllowedMoldModels()));
         equipment.setMinLength(toBigDecimal(request.getMinLength()));
         equipment.setMaxLength(toBigDecimal(request.getMaxLength()));
         equipment.setMinWidth(toBigDecimal(request.getMinWidth()));
@@ -185,6 +191,8 @@ public class EquipmentService {
     private boolean sameRule(Equipment equipment, EquipmentRuleRequest request) {
         return java.util.Objects.equals(equipment.getMaxBrackets(), request.getMaxBrackets())
                 && java.util.Objects.equals(equipment.getAllowedModels(), normalizeModels(request.getAllowedModels()))
+                && java.util.Objects.equals(equipment.getAllowedMoldModels(),
+                        MoldBatchService.normalizeMoldModels(request.getAllowedMoldModels()))
                 && sameDecimal(equipment.getMinLength(), request.getMinLength())
                 && sameDecimal(equipment.getMaxLength(), request.getMaxLength())
                 && sameDecimal(equipment.getMinWidth(), request.getMinWidth())
@@ -247,10 +255,21 @@ public class EquipmentService {
         );
         vo.setMaxBrackets(equipment.getMaxBrackets());
         vo.setAllowedModels(parseModels(equipment.getAllowedModels()));
+        vo.setAllowedMoldModels(MoldBatchService.parseMoldModels(equipment.getAllowedMoldModels()));
         vo.setMinLength(toDouble(equipment.getMinLength()));
         vo.setMaxLength(toDouble(equipment.getMaxLength()));
         vo.setMinWidth(toDouble(equipment.getMinWidth()));
         vo.setMaxWidth(toDouble(equipment.getMaxWidth()));
+        // 当前模具批次：仅最新一条换模记录可作为批量挂接/换线放行依据
+        MoldBatchRecord currentBatch = moldBatchService.findCurrentRecord(equipment.getId());
+        if (currentBatch != null) {
+            vo.setCurrentBatchId(currentBatch.getId());
+            vo.setCurrentBatchNo(currentBatch.getBatchNo());
+            vo.setCurrentMoldModel(currentBatch.getMoldModel());
+            vo.setCurrentBatchChangeTime(currentBatch.getChangeTime());
+        }
+        MoldBatchGateVO gate = moldBatchService.evaluateGate(equipment);
+        vo.setMoldBatchReady(Boolean.TRUE.equals(gate.getPassed()));
         boolean configured = isRuleConfigured(equipment);
         vo.setRuleConfigured(configured);
         vo.setCapacityStatus(resolveCapacityStatus(configured, equipment.getMaxBrackets(), bracketCount));

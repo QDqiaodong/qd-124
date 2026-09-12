@@ -26,7 +26,28 @@
         <span class="flow-label">剩余容量</span>
         <span class="flow-value">{{ result.availableSlots }} 个</span>
       </div>
+      <div class="rehang-flow-node">
+        <span class="flow-label">目标机当前模具批次</span>
+        <span
+          class="flow-value"
+          :style="result.moldBatchGate?.passed ? 'color:#16a34a' : 'color:#dc2626'"
+        >
+          <template v-if="result.moldBatchGate?.passed">
+            {{ result.moldBatchGate.currentBatchNo }}（{{ result.moldBatchGate.currentMoldModel }}）
+          </template>
+          <template v-else>未就绪·已拦截</template>
+        </span>
+      </div>
     </div>
+
+    <el-alert
+      v-if="result?.moldBatchGate && !result.moldBatchGate.passed"
+      :title="result.moldBatchGate.reason || '目标机换模批次未就绪，整单拦截'"
+      type="error"
+      :closable="false"
+      show-icon
+      style="margin: 12px 0"
+    />
 
     <el-alert
       :title="`预检通过 ${result?.passedItems.length || 0} 项，冲突 ${result?.conflicts.length || 0} 项`"

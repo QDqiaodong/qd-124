@@ -2,8 +2,10 @@ package com.bracket.controller;
 
 import com.bracket.entity.Bracket;
 import com.bracket.entity.Equipment;
+import com.bracket.entity.MoldBatchRecord;
 import com.bracket.repository.BracketRepository;
 import com.bracket.repository.EquipmentRepository;
+import com.bracket.repository.MoldBatchRecordRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -45,6 +47,9 @@ class RehangIntegrationTest {
     @Autowired
     private BracketRepository bracketRepository;
 
+    @Autowired
+    private MoldBatchRecordRepository moldBatchRecordRepository;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private JsonNode dataOf(MvcResult result) throws Exception {
@@ -83,7 +88,21 @@ class RehangIntegrationTest {
     @AfterEach
     void cleanUp() {
         bracketRepository.deleteAll();
+        moldBatchRecordRepository.deleteAll();
         equipmentRepository.deleteAll();
+    }
+
+    /** 为设备配置允许模具型号清单并登记当前批次（换模后写批次），使目标机放行就绪。 */
+    private void prepareCurrentMoldBatch(Equipment equipment, String batchNo, String moldModel) {
+        equipment.setAllowedMoldModels("MD-A,MD-B");
+        equipmentRepository.save(equipment);
+        MoldBatchRecord record = new MoldBatchRecord();
+        record.setEquipmentId(equipment.getId());
+        record.setBatchNo(batchNo);
+        record.setMoldModel(moldModel);
+        record.setChangeTime(java.time.LocalDateTime.now());
+        record.setOperator("测试员");
+        moldBatchRecordRepository.save(record);
     }
 
     @Test
@@ -96,6 +115,8 @@ class RehangIntegrationTest {
         target.setMinLength(BigDecimal.valueOf(100));
         target.setMaxLength(BigDecimal.valueOf(300));
         equipmentRepository.save(target);
+        // 目标机换模后已登记当前批次（型号在允许清单内），批次闸门放行后才进入型号/尺寸/容量判定
+        prepareCurrentMoldBatch(target, "MB-001", "MD-A");
 
         Bracket good = saveBracket("合规支架", "A-01", 200, 100, source.getId());
         Bracket wrongModel = saveBracket("型号冲突", "B-99", 200, 100, source.getId());
@@ -137,6 +158,7 @@ class RehangIntegrationTest {
         Equipment target = saveEquipment("TGT-002", "新线封口机");
         target.setAllowedModels("A-01");
         equipmentRepository.save(target);
+        prepareCurrentMoldBatch(target, "MB-002", "MD-B");
 
         Bracket good = saveBracket("可改挂", "A-01", 200, 100, source.getId());
         Bracket bad = saveBracket("改挂冲突", "B-99", 200, 100, source.getId());
@@ -169,6 +191,7 @@ class RehangIntegrationTest {
         Equipment source = saveEquipment("SRC-003", "源机");
         Equipment other = saveEquipment("OTHER-003", "其他机");
         Equipment target = saveEquipment("TGT-003", "目标机");
+        prepareCurrentMoldBatch(target, "MB-003", "MD-A");
 
         Bracket unbound = saveBracket("未绑定支架", "A-01", 100, 50, null);
         Bracket foreign = saveBracket("他机支架", "A-01", 100, 50, other.getId());

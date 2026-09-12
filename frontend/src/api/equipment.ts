@@ -1,5 +1,14 @@
 import request from '@/utils/request'
-import type { ApiResponse, PageResponse, Equipment, Bracket, EquipmentRule, RuleChangeDiagnosis } from '@/types'
+import type {
+  ApiResponse,
+  PageResponse,
+  Equipment,
+  Bracket,
+  EquipmentRule,
+  RuleChangeDiagnosis,
+  MoldBatchRecord,
+  MoldBatchRegisterRequest
+} from '@/types'
 
 export function getEquipmentList(params: {
   pageNum: number
@@ -58,6 +67,30 @@ export function diagnoseEquipmentRule(
     url: `/equipment/${equipmentId}/rule/diagnose`,
     method: 'post',
     data
+  })
+}
+
+/** 换模后为封口机登记当前模具批次；批次型号必须在该机允许清单内 */
+export function registerMoldBatch(
+  equipmentId: number,
+  data: MoldBatchRegisterRequest
+): Promise<ApiResponse<MoldBatchRecord>> {
+  return request({
+    url: `/equipment/${equipmentId}/mold-batches`,
+    method: 'post',
+    data
+  })
+}
+
+/** 按设备翻历史换模记录（最新一条为当前批次） */
+export function getMoldBatchHistory(
+  equipmentId: number,
+  params: { pageNum: number; pageSize: number }
+): Promise<ApiResponse<PageResponse<MoldBatchRecord>>> {
+  return request({
+    url: `/equipment/${equipmentId}/mold-batches`,
+    method: 'get',
+    params
   })
 }
 

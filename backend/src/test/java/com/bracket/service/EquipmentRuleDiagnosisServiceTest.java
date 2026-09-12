@@ -46,6 +46,9 @@ class EquipmentRuleDiagnosisServiceTest {
     @Mock
     private BracketService bracketService;
 
+    @Mock
+    private MoldBatchService moldBatchService;
+
     private EquipmentService equipmentService;
 
     private Equipment equipment;
@@ -53,7 +56,7 @@ class EquipmentRuleDiagnosisServiceTest {
     @BeforeEach
     void setUp() {
         equipmentService = new EquipmentService(equipmentRepository, bracketRepository,
-                bracketService, new RuleMatcher());
+                bracketService, new RuleMatcher(), moldBatchService);
         equipment = new Equipment();
         equipment.setId(1L);
         equipment.setEquipmentCode("FK-001");

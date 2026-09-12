@@ -94,6 +94,29 @@
                 effect="dark"
                 size="small"
               >已满</el-tag>
+              <el-tag
+                v-if="eq.moldBatchReady"
+                type="success"
+                effect="dark"
+                size="small"
+              >
+                当前模具批次：{{ eq.currentBatchNo }}
+              </el-tag>
+              <el-tag
+                v-else
+                type="danger"
+                effect="plain"
+                size="small"
+              >未登记模具批次·挂接拦截</el-tag>
+              <el-button
+                size="small"
+                type="success"
+                plain
+                @click.stop="openMoldDialog(eq)"
+              >
+                <el-icon><Files /></el-icon>
+                <span style="margin-left: 4px">换模登记</span>
+              </el-button>
               <el-button
                 size="small"
                 type="primary"
@@ -143,6 +166,28 @@
             <div class="rule-overview" v-else>
               <span class="rule-overview-label">配套规则：</span>
               <el-tag size="small" type="warning" effect="plain">未配置，绑定时不做限制</el-tag>
+            </div>
+
+            <div class="rule-overview mold-overview">
+              <span class="rule-overview-label">模具批次：</span>
+              <template v-if="eq.moldBatchReady">
+                <el-tag size="small" type="success" effect="dark">
+                  当前批次 {{ eq.currentBatchNo }}（{{ eq.currentMoldModel }}）
+                </el-tag>
+                <span v-if="eq.currentBatchChangeTime" class="mold-change-time">
+                  换模时间 {{ formatDateTime(eq.currentBatchChangeTime) }}
+                </span>
+              </template>
+              <el-tag v-else size="small" type="danger" effect="plain">
+                换模后未登记当前批次，批量挂接/换线改挂已拦截
+              </el-tag>
+              <el-tag size="small" type="info" effect="plain">
+                允许模具型号：{{ eq.allowedMoldModels && eq.allowedMoldModels.length ? eq.allowedMoldModels.join('、') : '未配置' }}
+              </el-tag>
+              <el-button size="small" type="success" plain @click="openMoldDialog(eq)">
+                <el-icon><Files /></el-icon>
+                <span style="margin-left: 4px">换模登记 / 历史</span>
+              </el-button>
             </div>
 
             <div
@@ -262,6 +307,27 @@
               />
             </el-select>
             <div class="form-tip">可从已有型号中选择，也可直接输入新型号，多个型号取其一即可</div>
+          </el-form-item>
+          <el-form-item label="允许模具型号" prop="allowedMoldModelList">
+            <el-select
+              v-model="ruleMoldModelList"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              placeholder="配置后才可登记换模批次"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="model in modelOptions"
+                :key="model"
+                :label="model"
+                :value="model"
+              />
+            </el-select>
+            <div class="form-tip">
+              换模后登记的模具批次型号必须在此清单内；当前批次型号被移出清单后，批量挂接/换线改挂将被拦截
+            </div>
           </el-form-item>
           <el-form-item label="长度范围(mm)">
             <div class="range-row">
@@ -492,6 +558,12 @@
       :confirm-loading="confirmLoading"
       @confirm="handleCheckConfirm"
     />
+
+    <MoldBatchDialog
+      v-model="moldDialogVisible"
+      :equipment="moldDialogEquipment"
+      @registered="handleMoldRegistered"
+    />
   </div>
 </template>
 
@@ -509,7 +581,8 @@ import {
   Setting,
   Link,
   Close,
-  Switch
+  Switch,
+  Files
 } from '@element-plus/icons-vue'
 import {
   getEquipmentList,
@@ -522,6 +595,7 @@ import { getBracketList, getBracketModels } from '@/api/bracket'
 import { unbindBracket, checkBind, confirmBind } from '@/api/binding'
 import type { Equipment, Bracket, EquipmentRule, BindCheckResult, RuleChangeDiagnosis, RuleImpactItem } from '@/types'
 import BindCheckDialog from '@/components/BindCheckDialog.vue'
+import MoldBatchDialog from '@/components/MoldBatchDialog.vue'
 
 const router = useRouter()
 
@@ -555,6 +629,14 @@ const formatRange = (min?: number | null, max?: number | null) => {
   const minText = min != null ? min : '不限'
   const maxText = max != null ? max : '不限'
   return `${minText} ~ ${maxText} mm`
+}
+
+const pad = (n: number) => String(n).padStart(2, '0')
+const formatDateTime = (value?: string | null) => {
+  if (!value) return '-'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return value
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 const fetchUnboundCount = async () => {
@@ -659,6 +741,7 @@ const currentEquipment = ref<Equipment | null>(null)
 const ruleFormRef = ref<FormInstance>()
 const modelOptions = ref<string[]>([])
 const ruleModelList = ref<string[]>([])
+const ruleMoldModelList = ref<string[]>([])
 const ruleForm = reactive<EquipmentRule>({
   maxBrackets: null,
   allowedModels: '',
@@ -745,6 +828,7 @@ const openRuleDialog = (eq: Equipment) => {
   currentEquipment.value = eq
   ruleForm.maxBrackets = eq.maxBrackets ?? null
   ruleModelList.value = [...(eq.allowedModels || [])]
+  ruleMoldModelList.value = [...(eq.allowedMoldModels || [])]
   ruleForm.minLength = eq.minLength ?? null
   ruleForm.maxLength = eq.maxLength ?? null
   ruleForm.minWidth = eq.minWidth ?? null
@@ -757,6 +841,7 @@ const openRuleDialog = (eq: Equipment) => {
 const buildRulePayload = (): EquipmentRule => ({
   maxBrackets: ruleForm.maxBrackets ?? null,
   allowedModels: ruleModelList.value.join(','),
+  allowedMoldModels: ruleMoldModelList.value.join(','),
   minLength: ruleForm.minLength ?? null,
   maxLength: ruleForm.maxLength ?? null,
   minWidth: ruleForm.minWidth ?? null,
@@ -842,6 +927,7 @@ const handleClearRule = () => {
       if (!currentEquipment.value) return
       ruleForm.maxBrackets = null
       ruleModelList.value = []
+      ruleMoldModelList.value = []
       ruleForm.minLength = null
       ruleForm.maxLength = null
       ruleForm.minWidth = null
@@ -850,6 +936,22 @@ const handleClearRule = () => {
       await runDiagnosis()
     })
     .catch(() => {})
+}
+
+// ============ 换模批次登记与历史 ============
+const moldDialogVisible = ref(false)
+const moldDialogEquipment = ref<Equipment | null>(null)
+
+const openMoldDialog = (eq: Equipment) => {
+  currentEquipment.value = eq
+  moldDialogEquipment.value = eq
+  moldDialogVisible.value = true
+}
+
+/** 批次登记成功后刷新设备清单，配套清单立即显示新的当前批次 */
+const handleMoldRegistered = () => {
+  fetchEquipmentList()
+  fetchUnboundCount()
 }
 
 // ============ 选择未配套支架并校验绑定 ============
@@ -946,6 +1048,17 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 600;
   color: #334155;
+}
+
+.mold-overview {
+  margin-top: -4px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.mold-change-time {
+  font-size: 12px;
+  color: #64748b;
 }
 
 .form-tip {

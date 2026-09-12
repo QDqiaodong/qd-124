@@ -19,6 +19,11 @@ public class BindCheckResultVO {
     private List<BindCheckItemVO> items;
     private List<BindCheckItemVO> passedItems;
     private List<BindCheckItemVO> conflicts;
+    /**
+     * 换模批次放行闸门：批量挂接/换线改挂前校验目标机当前模具批次。
+     * 不通过时本单全部条目判为冲突，不得放行。
+     */
+    private MoldBatchGateVO moldBatchGate;
 
     public BindCheckResultVO() {
     }
@@ -93,5 +98,13 @@ public class BindCheckResultVO {
 
     public void setConflicts(List<BindCheckItemVO> conflicts) {
         this.conflicts = conflicts;
+    }
+
+    public MoldBatchGateVO getMoldBatchGate() {
+        return moldBatchGate;
+    }
+
+    public void setMoldBatchGate(MoldBatchGateVO moldBatchGate) {
+        this.moldBatchGate = moldBatchGate;
     }
 }

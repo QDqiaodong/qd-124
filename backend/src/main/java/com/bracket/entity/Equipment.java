@@ -27,6 +27,10 @@ public class Equipment {
     @Column(name = "allowed_models", length = 1000)
     private String allowedModels;
 
+    /** 允许在本机使用的模具型号清单，逗号分隔，空表示不维护清单（不允许任何批次登记）。 */
+    @Column(name = "allowed_mold_models", length = 1000)
+    private String allowedMoldModels;
+
     @Column(name = "min_length", precision = 10, scale = 2)
     private BigDecimal minLength;
 
@@ -88,6 +92,14 @@ public class Equipment {
 
     public void setAllowedModels(String allowedModels) {
         this.allowedModels = allowedModels;
+    }
+
+    public String getAllowedMoldModels() {
+        return allowedMoldModels;
+    }
+
+    public void setAllowedMoldModels(String allowedMoldModels) {
+        this.allowedMoldModels = allowedMoldModels;
     }
 
     public BigDecimal getMinLength() {

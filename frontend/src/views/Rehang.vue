@@ -128,7 +128,29 @@
       </div>
 
       <div v-if="targetEquipment" class="target-rule-box">
-        <div class="target-rule-title">
+        <!-- 目标机换模批次闸门：未写有效当前批次时禁止改挂 -->
+        <div class="mold-gate" :class="targetEquipment.moldBatchReady ? 'mold-gate-ok' : 'mold-gate-blocked'">
+          <div class="target-rule-title">
+            <el-icon><CircleCheck v-if="targetEquipment.moldBatchReady" /><Warning v-else /></el-icon>
+            目标机当前模具批次（放行依据）
+          </div>
+          <template v-if="targetEquipment.moldBatchReady">
+            <div class="target-rule-row">
+              批次号：<b>{{ targetEquipment.currentBatchNo }}</b>
+              <span style="margin-left: 8px">模具型号：<b>{{ targetEquipment.currentMoldModel }}</b></span>
+            </div>
+          </template>
+          <div v-else class="target-rule-row" style="color: #dc2626; font-weight: 600">
+            目标机未登记有效当前批次（未写批次或批次型号不在允许清单），换线改挂将被拦截，请先到设备配套清单做换模登记
+          </div>
+          <div class="target-rule-row" style="font-size: 12px; color: #64748b">
+            允许模具型号：{{ targetEquipment.allowedMoldModels && targetEquipment.allowedMoldModels.length
+              ? targetEquipment.allowedMoldModels.join('、')
+              : '未配置（无法登记批次）' }}
+          </div>
+        </div>
+
+        <div class="target-rule-title" style="margin-top: 10px">
           <el-icon><InfoFilled /></el-icon>
           目标机现行配套规则（按此逐项预检）
         </div>
@@ -193,7 +215,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Search, Delete, InfoFilled, Switch } from '@element-plus/icons-vue'
+import { Search, Delete, InfoFilled, Switch, CircleCheck, Warning } from '@element-plus/icons-vue'
 import { getAllEquipment, getEquipmentBrackets } from '@/api/equipment'
 import { checkRehang, confirmRehang } from '@/api/binding'
 import type { Bracket, Equipment, RehangCheckResult } from '@/types'
@@ -304,6 +326,11 @@ const handleRehangCheck = async () => {
     ElMessage.warning('目标封口机不能与源设备相同')
     return
   }
+  // 换模批次硬联锁（前端提示，后端仍会强制拦截）：目标机未写有效当前批次时不允许换线改挂
+  if (targetEquipment.value && targetEquipment.value.moldBatchReady === false) {
+    ElMessage.error('目标封口机尚未登记有效当前模具批次，请先在「设备配套清单」完成换模登记')
+    return
+  }
 
   submitting.value = true
   try {
@@ -396,5 +423,21 @@ onMounted(() => {
 
 .target-rule-row b {
   color: #1e40af;
+}
+
+.mold-gate {
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+.mold-gate-ok {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+}
+
+.mold-gate-blocked {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
 }
 </style>
