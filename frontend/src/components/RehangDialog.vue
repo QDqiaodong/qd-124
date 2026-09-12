@@ -148,6 +148,14 @@ const visible = computed({
 
 const title = computed(() => props.title || '改挂预检结果')
 
+/** 返修闸门拦下的条目数（返修中未回库 / 回库不合格），用于顶部汇总提示 */
+const repairBlockedCount = computed(
+  () =>
+    (props.result?.items || []).filter(
+      (item) => item.repairGate && item.repairGate.passed === false
+    ).length
+)
+
 const handleConfirm = () => {
   emit('confirm')
 }
