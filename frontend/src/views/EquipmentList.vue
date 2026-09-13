@@ -906,14 +906,17 @@ const handleConfirmSave = async () => {
   ruleSubmitting.value = true
   try {
     await updateEquipmentRule(equipmentId, buildRulePayload())
+    // 先等设备清单与该机配套支架清单刷新完成，再提示保存成功：
+    // 保存成功当下页顶容量标签与该机展开行的上限即与新上限一致，
+    // 不会出现「保存后仍显示旧上限、再搜一次或切档案回来才变」
+    equipmentBracketsMap.value.delete(equipmentId)
+    await Promise.all([
+      expandedIds.value.has(equipmentId) ? fetchEquipmentBrackets(equipmentId) : Promise.resolve(),
+      fetchEquipmentList()
+    ])
     ElMessage.success('配套规则已保存，立即生效于后续绑定；需人工处理的存量绑定请尽快处理')
     ruleDialogVisible.value = false
     resetDiagnosisState()
-    equipmentBracketsMap.value.delete(equipmentId)
-    if (expandedIds.value.has(equipmentId)) {
-      fetchEquipmentBrackets(equipmentId)
-    }
-    fetchEquipmentList()
   } catch (error) {
     console.error('保存规则失败:', error)
   } finally {
