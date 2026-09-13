@@ -4,12 +4,17 @@ import ElementPlus, { ElMessageBox } from 'element-plus'
 import { nextTick } from 'vue'
 import BracketImport from '@/views/BracketImport.vue'
 import { getBracketStats, getBracketModels } from '@/api/bracket'
+import { getAllEquipment } from '@/api/equipment'
 import { previewBracketImport, confirmBracketImport } from '@/api/bracketImport'
 import type { BracketImportPreview, BracketImportResult } from '@/types'
 
 vi.mock('@/api/bracket', () => ({
   getBracketStats: vi.fn(),
   getBracketModels: vi.fn()
+}))
+
+vi.mock('@/api/equipment', () => ({
+  getAllEquipment: vi.fn()
 }))
 
 vi.mock('@/api/bracketImport', () => ({
@@ -59,6 +64,12 @@ const resultData: BracketImportResult = {
   ]
 }
 
+// 两台在用批次机台（已登记当前模具批次）：ST-NEW 两边都不允许
+const inProductionEquipments = [
+  { id: 1, code: 'FK-001', name: '1号封口机', moldBatchReady: true, allowedModels: ['ST-OTHER'] },
+  { id: 2, code: 'FK-002', name: '2号封口机', moldBatchReady: true, allowedModels: ['ST-OTHER', 'ST-OK'] }
+]
+
 describe('BracketImport 支架档案批量导入工作台', () => {
   ;(globalThis as any).ResizeObserver = class {
     observe() {}
@@ -68,12 +79,18 @@ describe('BracketImport 支架档案批量导入工作台', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     vi.mocked(getBracketStats).mockResolvedValue({
       code: 200,
       message: 'ok',
       data: { total: 8, bound: 3, unbound: 5 }
     })
     vi.mocked(getBracketModels).mockResolvedValue({ code: 200, message: 'ok', data: ['ST-NEW'] })
+    vi.mocked(getAllEquipment).mockResolvedValue({
+      code: 200,
+      message: 'ok',
+      data: inProductionEquipments as any
+    })
     vi.mocked(previewBracketImport).mockResolvedValue({ code: 200, message: 'ok', data: previewData } as any)
     vi.mocked(confirmBracketImport).mockResolvedValue({ code: 200, message: 'ok', data: resultData } as any)
     document.body.innerHTML = ''
@@ -216,5 +233,94 @@ describe('BracketImport 支架档案批量导入工作台', () => {
     expect(btn).toBeTruthy()
     expect(btn.disabled).toBe(true)
     expect(wrapper.text()).toContain('没有可导入的数据行')
+  })
+
+  /** 走一遍 校验 → 确认导入 流程并等待结果渲染 */
+  const importOnce = async () => {
+    const wrapper = mountPage()
+    await flush()
+    const vm = wrapper.vm as any
+    vm.selectedFile = new File(['x'], 'b.csv', { type: 'text/csv' })
+    await vm.handlePreview()
+    await flush()
+    findButton('确认导入 1 行')!.click()
+    await flush()
+    return wrapper
+  }
+
+  it('型号对不上任何在用批次允许清单时：仍算成功，但结果表新增标记列并写出冲突机台名', async () => {
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as any)
+    const wrapper = await importOnce()
+
+    const text = wrapper.text()
+    // 成功明细表存在，标记列表头存在
+    expect(text).toContain('成功入库明细')
+    expect(text).toContain('换线改挂')
+    // 该行仍计入成功
+    expect(text).toContain('ST-NEW')
+    // 标为不宜改挂并列出两台冲突机台
+    expect(text).toContain('型号对不上在用批次')
+    expect(text).toContain('冲突机台：1号封口机、2号封口机')
+    // 顶部告警与待确认按钮
+    expect(text).toContain('不能直接拿去换线改挂')
+    expect(findButton('我已知悉')).toBeTruthy()
+  })
+
+  it('型号命中任意一台在用批次允许清单时不标记、不写冲突机台', async () => {
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as any)
+    vi.mocked(getAllEquipment).mockResolvedValue({
+      code: 200,
+      message: 'ok',
+      // ST-NEW 被 2 号机允许
+      data: [
+        { id: 1, code: 'FK-001', name: '1号封口机', moldBatchReady: true, allowedModels: ['ST-OTHER'] },
+        { id: 2, code: 'FK-002', name: '2号封口机', moldBatchReady: true, allowedModels: ['ST-NEW'] }
+      ] as any
+    })
+    const wrapper = await importOnce()
+
+    const text = wrapper.text()
+    expect(text).toContain('可用于在产批次')
+    expect(text).not.toContain('型号对不上在用批次')
+    expect(text).not.toContain('冲突机台')
+    expect(findButton('我已知悉')).toBeFalsy()
+    // 无冲突时不留快照
+    expect(localStorage.getItem('bracket-import:rehang-warning:v1')).toBeNull()
+  })
+
+  it('关掉结果区再进导入页，标记列与冲突机台仍在（快照还原）', async () => {
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as any)
+    await importOnce()
+    expect(localStorage.getItem('bracket-import:rehang-warning:v1')).not.toBeNull()
+
+    // 模拟关闭结果抽屉后重新进入导入页：组件重新挂载
+    const wrapper2 = mountPage()
+    await flush()
+    const text2 = wrapper2.text()
+    expect(text2).toContain('导入结果')
+    expect(text2).toContain('上次导入未确认提示')
+    expect(text2).toContain('型号对不上在用批次')
+    expect(text2).toContain('冲突机台：1号封口机、2号封口机')
+    expect(findButton('我已知悉')).toBeTruthy()
+  })
+
+  it('用户点「我已知悉」后收起提醒并清除快照，再次进入导入页不再出现标记列', async () => {
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as any)
+    const wrapper = await importOnce()
+
+    const ackBtn = findButton('我已知悉')!
+    ackBtn.click()
+    await flush()
+    // 快照已清除：重进页面不再提示
+    expect(localStorage.getItem('bracket-import:rehang-warning:v1')).toBeNull()
+    // 当前页提醒告警收起
+    expect(wrapper.text()).not.toContain('不能直接拿去换线改挂')
+    expect(findButton('我已知悉')).toBeFalsy()
+
+    // 重进导入页：无快照，结果区不再出现
+    const wrapper2 = mountPage()
+    await flush()
+    expect(wrapper2.text()).not.toContain('导入结果')
+    expect(wrapper2.text()).not.toContain('型号对不上在用批次')
   })
 })

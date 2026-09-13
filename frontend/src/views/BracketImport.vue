@@ -198,6 +198,9 @@
       <div class="import-card-title">
         <span class="step-badge">3</span>
         导入结果
+        <el-tag v-if="restoredSnapshot" type="warning" size="small" effect="plain" class="restored-tag">
+          上次导入未确认提示
+        </el-tag>
       </div>
 
       <div class="result-cards">
@@ -226,6 +229,78 @@
         show-icon
         :title="resultMessage"
       />
+
+      <!-- 型号对不上任何在用批次允许清单：仍算导入成功，但不能直接换线改挂 -->
+      <el-alert
+        v-if="blockedCount > 0 && !warningAcknowledged"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="rehang-alert"
+      >
+        <template #title>
+          <div class="rehang-alert-title">
+            <span>
+              有 <b class="cnt-blocked">{{ blockedCount }}</b> 行已成功入库，但其型号对不上
+              <b>任何在用批次</b>机台的允许型号清单，不能直接拿去换线改挂；
+              冲突机台已在下表逐行标出，请安排换模登记或核对型号后再改挂。
+            </span>
+            <el-button
+              type="primary"
+              size="small"
+              plain
+              :icon="CircleCheck"
+              @click="acknowledgeRehangWarning"
+            >
+              我已知悉
+            </el-button>
+          </div>
+        </template>
+      </el-alert>
+
+      <template v-if="resultSuccessRows.length > 0">
+        <div class="failed-header">
+          <span>
+            成功入库明细（共 {{ resultSuccessRows.length }} 行
+            <template v-if="blockedCount > 0">
+              ，其中 <span class="cnt-blocked">{{ blockedCount }}</span> 行型号对不上在用批次允许清单
+            </template>
+            ）
+          </span>
+        </div>
+        <el-table :data="resultSuccessRows" stripe border max-height="320" style="width: 100%">
+          <el-table-column prop="rowNum" label="原文件行号" width="100" align="center" />
+          <el-table-column prop="name" label="支架名称" min-width="140">
+            <template #default="{ row }">{{ row.name ?? '-' }}</template>
+          </el-table-column>
+          <el-table-column prop="model" label="型号" min-width="120">
+            <template #default="{ row }">{{ row.model ?? '-' }}</template>
+          </el-table-column>
+          <el-table-column prop="length" label="长(mm)" width="90" align="center">
+            <template #default="{ row }">{{ row.length ?? '-' }}</template>
+          </el-table-column>
+          <el-table-column prop="width" label="宽(mm)" width="90" align="center">
+            <template #default="{ row }">{{ row.width ?? '-' }}</template>
+          </el-table-column>
+          <el-table-column label="换线改挂" min-width="220">
+            <template #default="{ row }">
+              <template v-if="row.rehangBlocked">
+                <el-tag type="warning" effect="dark" size="small">
+                  <el-icon class="rehang-tag-icon"><Warning /></el-icon>
+                  型号对不上在用批次
+                </el-tag>
+                <div v-if="row.conflictEquipmentNames && row.conflictEquipmentNames.length" class="conflict-equipments">
+                  冲突机台：{{ row.conflictEquipmentNames.join('、') }}
+                </div>
+              </template>
+              <el-tag v-else-if="hasInProductionEquipment" type="success" effect="light" size="small">
+                可用于在产批次
+              </el-tag>
+              <el-tag v-else type="info" effect="plain" size="small">暂无在用批次</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
 
       <template v-if="importResult.failedRows.length > 0">
         <div class="failed-header">
@@ -277,9 +352,11 @@ import {
   InfoFilled,
   Grid,
   Link,
-  Close
+  Close,
+  Warning
 } from '@element-plus/icons-vue'
 import { getBracketStats } from '@/api/bracket'
+import { getAllEquipment } from '@/api/equipment'
 import {
   isImportFileSupported,
   previewBracketImport,
@@ -287,7 +364,21 @@ import {
   getBracketImportTemplateUrl
 } from '@/api/bracketImport'
 import { useModelSuggestions } from '@/composables/useModelSuggestions'
-import type { BracketImportPreview, BracketImportResult, BracketImportRow, BracketImportStatus } from '@/types'
+import {
+  markSuccessRows,
+  saveImportResultSnapshot,
+  loadImportResultSnapshot,
+  clearImportResultSnapshot,
+  type ImportResultSnapshot
+} from './bracketImportResult'
+import type {
+  Equipment,
+  BracketImportPreview,
+  BracketImportResult,
+  BracketImportRow,
+  BracketImportSuccessRow,
+  BracketImportStatus
+} from '@/types'
 
 // 与后端 BracketImportService 保持一致
 const maxRows = 5000
@@ -309,6 +400,15 @@ const importResult = ref<BracketImportResult | null>(null)
 const statusFilter = ref<'ALL' | BracketImportStatus>('ALL')
 const currentPage = ref(1)
 
+// 在用批次机台清单：用于给成功行标注「型号对不上在用批次允许清单」
+const equipmentList = ref<Equipment[]>([])
+// 本次成功入库行（带改挂适配标记）
+const markedSuccessRows = ref<BracketImportSuccessRow[]>([])
+// 结果区关闭后重进页面时，从本地快照还原的待确认结果
+const restoredSnapshot = ref<ImportResultSnapshot | null>(null)
+// 用户本次已点过「我已知悉」：收起提醒，但当前结果表的事实标记保留
+const warningAcknowledged = ref(false)
+
 const fetchStats = async () => {
   try {
     const res = await getBracketStats()
@@ -320,6 +420,25 @@ const fetchStats = async () => {
   } catch (error) {
     console.error('获取统计数据失败:', error)
   }
+}
+
+const fetchEquipmentList = async () => {
+  try {
+    const res = await getAllEquipment()
+    equipmentList.value = res.data || []
+  } catch (error) {
+    console.error('获取设备清单失败:', error)
+  }
+}
+
+/** 还原上一次导入后尚未确认看过的结果快照（结果抽屉已关闭、重进导入页仍要提示） */
+const restorePendingSnapshot = () => {
+  const snapshot = loadImportResultSnapshot()
+  if (!snapshot || snapshot.blockedCount === 0) return
+  restoredSnapshot.value = snapshot
+  warningAcknowledged.value = false
+  importResult.value = snapshot.result
+  markedSuccessRows.value = snapshot.successRows
 }
 
 const handleFileChange = (file: UploadFile) => {
@@ -403,12 +522,22 @@ const handleConfirm = async () => {
     const res = await confirmBracketImport(selectedFile.value)
     if (res.data) {
       importResult.value = res.data
-      if (res.data.failedCount === 0 && res.data.skippedCount === 0) {
-        ElMessage.success(`导入成功，共新增 ${res.data.successCount} 条支架档案`)
+      restoredSnapshot.value = null
+      warningAcknowledged.value = false
+      applyRehangMarking(res.data)
+      const blockedCount = markedSuccessRows.value.filter((r) => r.rehangBlocked).length
+      if (blockedCount > 0) {
+        ElMessage.warning(`导入成功，共新增 ${res.data.successCount} 条；其中 ${blockedCount} 条型号对不上在用批次允许清单，不能直接换线改挂`)
+        // 持久化结果快照：关掉结果区、重进导入页仍能看到标记列，直到用户确认看过
+        saveImportResultSnapshot({
+          result: res.data,
+          successRows: markedSuccessRows.value,
+          blockedCount,
+          savedAt: new Date().toISOString()
+        })
       } else {
-        ElMessage.warning(
-          `导入完成：成功 ${res.data.successCount}，失败 ${res.data.failedCount}，跳过 ${res.data.skippedCount}`
-        )
+        ElMessage.success(`导入成功，共新增 ${res.data.successCount} 条支架档案`)
+        clearImportResultSnapshot()
       }
       // 只写入了通过行，刷新未绑定统计与热门型号建议
       await Promise.all([fetchStats(), refreshModelSuggestions()])
@@ -420,6 +549,29 @@ const handleConfirm = async () => {
   }
 }
 
+/**
+ * 给导入成功行逐行标注「型号是否对得上在用批次允许清单」。
+ * 后端若未下发 successRows，则以校验预览的 VALID 行（本次实际提交的全部行）兜底。
+ */
+const applyRehangMarking = (result: BracketImportResult) => {
+  const sourceRows: BracketImportRow[] =
+    result.successRows && result.successRows.length > 0
+      ? result.successRows
+      : preview.value?.rows.filter((r) => r.status === 'VALID') ?? []
+  markedSuccessRows.value = markSuccessRows(sourceRows, equipmentList.value)
+  if (!result.successRows || result.successRows.length === 0) {
+    result.successRows = markedSuccessRows.value
+  }
+}
+
+/** 用户确认看过不宜改挂提示：清除持久化快照并收起提醒（结果表事实标记保留至关闭结果区） */
+const acknowledgeRehangWarning = () => {
+  clearImportResultSnapshot()
+  restoredSnapshot.value = null
+  warningAcknowledged.value = true
+  ElMessage.success('已知悉，已取消该提示；有型号冲突的支架可在换模登记后再行改挂')
+}
+
 const resultMessage = computed(() => {
   if (!importResult.value) return ''
   const r = importResult.value
@@ -429,12 +581,28 @@ const resultMessage = computed(() => {
   return `成功新增 ${r.successCount} 条；${r.failedCount} 条校验失败未写入；${r.skippedCount} 条因型号已存在被跳过。可下载失败行修正后重新导入。`
 })
 
+// 结果表成功行：优先用带标记的明细（含从快照还原的场景），否则退回结果对象
+const resultSuccessRows = computed<BracketImportSuccessRow[]>(() => {
+  if (markedSuccessRows.value.length > 0) return markedSuccessRows.value
+  return importResult.value?.successRows ?? []
+})
+
+const blockedSuccessRows = computed(() => resultSuccessRows.value.filter((r) => r.rehangBlocked))
+
+const blockedCount = computed(() => blockedSuccessRows.value.length)
+
+const hasInProductionEquipment = computed(
+  () => equipmentList.value.some((eq) => eq.moldBatchReady === true)
+)
+
 const resetAll = () => {
   uploadRef.value?.clearFiles()
   fileList.value = []
   selectedFile.value = null
   preview.value = null
   importResult.value = null
+  markedSuccessRows.value = []
+  // 注意：不清除 restoredSnapshot/本地快照——关掉结果区重进页面仍要看到标记列，直到用户确认看过
   statusFilter.value = 'ALL'
   currentPage.value = 1
 }
@@ -500,6 +668,8 @@ const pagedRows = computed<BracketImportRow[]>(() => {
 
 onMounted(() => {
   fetchStats()
+  // 拉取在用批次机台清单后，再还原待确认结果并为成功行补打标记
+  fetchEquipmentList().finally(restorePendingSnapshot)
 })
 </script>
 
@@ -661,5 +831,37 @@ onMounted(() => {
   font-weight: 600;
   color: #334155;
   margin: 8px 0 10px;
+}
+
+.restored-tag {
+  margin-left: 4px;
+}
+
+.rehang-alert {
+  margin-bottom: 14px;
+}
+
+.rehang-alert-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  line-height: 1.7;
+}
+
+.cnt-blocked {
+  color: #d97706;
+}
+
+.rehang-tag-icon {
+  vertical-align: -2px;
+  margin-right: 2px;
+}
+
+.conflict-equipments {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #b45309;
+  line-height: 1.5;
 }
 </style>

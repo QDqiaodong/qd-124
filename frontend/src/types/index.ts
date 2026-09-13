@@ -269,10 +269,20 @@ export interface BracketImportPreview {
   rows: BracketImportRow[]
 }
 
+/** 导入结果中的成功行：附带「型号是否对得上在用批次允许清单」的改挂适配标记 */
+export interface BracketImportSuccessRow extends BracketImportRow {
+  /** 型号不在任何在用批次机台允许清单内：仍算导入成功，但不能直接拿去换线改挂 */
+  rehangBlocked?: boolean
+  /** 冲突机台名称（在产但不允许该型号的机台；命中任意一台即不算冲突，故仅 blocked 时有值） */
+  conflictEquipmentNames?: string[]
+}
+
 export interface BracketImportResult {
   totalCount: number
   successCount: number
   failedCount: number
   skippedCount: number
   failedRows: BracketImportRow[]
+  /** 成功入库明细（后端未下发时由前端按预览 VALID 行补齐），逐行带改挂适配标记 */
+  successRows?: BracketImportSuccessRow[]
 }
