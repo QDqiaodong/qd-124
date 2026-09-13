@@ -68,6 +68,47 @@ public class RuleTableMigration implements InitializingBean {
                     log.info("配套规则迁移：新建 mold_batch_record 换模批次记录表");
                 }
             }
+            if (!tableExists(metaData, "first_article_inspection")) {
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("CREATE TABLE first_article_inspection ("
+                            + "id BIGINT PRIMARY KEY AUTO_INCREMENT,"
+                            + "form_no VARCHAR(50) DEFAULT NULL COMMENT '确认单号，开单后系统生成',"
+                            + "equipment_id BIGINT NOT NULL COMMENT '封口设备ID',"
+                            + "mold_batch_record_id BIGINT DEFAULT NULL COMMENT '开单时当前换模批次记录ID',"
+                            + "batch_no VARCHAR(100) NOT NULL COMMENT '模具批次号快照',"
+                            + "mold_model VARCHAR(100) NOT NULL COMMENT '模具型号快照',"
+                            + "standard_length DECIMAL(10,2) NOT NULL COMMENT '标准长(mm)',"
+                            + "standard_width DECIMAL(10,2) NOT NULL COMMENT '标准宽(mm)',"
+                            + "standard_height DECIMAL(10,2) NOT NULL COMMENT '标准高(mm)',"
+                            + "tolerance_mm DECIMAL(10,2) NOT NULL COMMENT '公差(±mm)',"
+                            + "measured_length DECIMAL(10,2) NOT NULL COMMENT '实测长(mm)',"
+                            + "measured_width DECIMAL(10,2) NOT NULL COMMENT '实测宽(mm)',"
+                            + "measured_height DECIMAL(10,2) NOT NULL COMMENT '实测高(mm)',"
+                            + "length_deviation DECIMAL(10,2) NOT NULL COMMENT '长量差=实测-标准(mm)',"
+                            + "width_deviation DECIMAL(10,2) NOT NULL COMMENT '宽量差=实测-标准(mm)',"
+                            + "height_deviation DECIMAL(10,2) NOT NULL COMMENT '高量差=实测-标准(mm)',"
+                            + "out_of_tolerance TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否超线：1超线禁止放行',"
+                            + "status VARCHAR(20) NOT NULL COMMENT 'PENDING待签放/RELEASED已放行/RETURNED已退回再量',"
+                            + "operator VARCHAR(100) NOT NULL COMMENT '开单人（调度）',"
+                            + "remark VARCHAR(500) DEFAULT NULL COMMENT '备注',"
+                            + "release_signer VARCHAR(100) DEFAULT NULL COMMENT '签放人',"
+                            + "release_time DATETIME DEFAULT NULL COMMENT '签放时间',"
+                            + "return_operator VARCHAR(100) DEFAULT NULL COMMENT '退回人',"
+                            + "return_reason VARCHAR(500) DEFAULT NULL COMMENT '退回原因',"
+                            + "return_time DATETIME DEFAULT NULL COMMENT '退回时间',"
+                            + "create_time DATETIME DEFAULT CURRENT_TIMESTAMP,"
+                            + "UNIQUE KEY uk_fai_form_no (form_no),"
+                            + "INDEX idx_fai_equipment (equipment_id),"
+                            + "INDEX idx_fai_status (status),"
+                            + "INDEX idx_fai_create_time (create_time),"
+                            + "CONSTRAINT fk_fai_equipment FOREIGN KEY (equipment_id) "
+                            + "REFERENCES equipment(id) ON DELETE CASCADE,"
+                            + "CONSTRAINT fk_fai_mold_batch FOREIGN KEY (mold_batch_record_id) "
+                            + "REFERENCES mold_batch_record(id) ON DELETE SET NULL"
+                            + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='首件尺寸确认单表'");
+                    log.info("配套规则迁移：新建 first_article_inspection 首件尺寸确认单表");
+                }
+            }
             if (!tableExists(metaData, "bracket_repair_record")) {
                 try (Statement statement = connection.createStatement()) {
                     statement.execute("CREATE TABLE bracket_repair_record ("

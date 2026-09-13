@@ -32,6 +32,10 @@
           <el-icon><UploadFilled /></el-icon>
           <span>支架批量导入</span>
         </el-menu-item>
+        <el-menu-item index="/first-articles">
+          <el-icon><DocumentChecked /></el-icon>
+          <span>首件尺寸确认</span>
+        </el-menu-item>
       </el-menu>
     </header>
     <main class="layout-main">
@@ -43,7 +47,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Setting, Grid, Monitor, Link, Switch, UploadFilled } from '@element-plus/icons-vue'
+import { Setting, Grid, Monitor, Link, Switch, UploadFilled, DocumentChecked } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const activeMenu = computed(() => route.path)

@@ -4,6 +4,7 @@ import EquipmentList from '@/views/EquipmentList.vue'
 import BatchBind from '@/views/BatchBind.vue'
 import Rehang from '@/views/Rehang.vue'
 import BracketImport from '@/views/BracketImport.vue'
+import FirstArticleList from '@/views/FirstArticleList.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -35,6 +36,12 @@ const routes: RouteRecordRaw[] = [
     name: 'BracketImport',
     component: BracketImport,
     meta: { title: '支架档案批量导入' }
+  },
+  {
+    path: '/first-articles',
+    name: 'FirstArticleList',
+    component: FirstArticleList,
+    meta: { title: '首件尺寸确认' }
   }
 ]
 

@@ -42,6 +42,41 @@ CREATE TABLE IF NOT EXISTS mold_batch_record (
     CONSTRAINT fk_mold_batch_equipment FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='换模批次记录表（最新一条为当前批次，旧批次仅作历史追溯）';
 
+CREATE TABLE IF NOT EXISTS first_article_inspection (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    form_no VARCHAR(50) DEFAULT NULL COMMENT '确认单号，开单后系统生成（FA-日期-序号）',
+    equipment_id BIGINT NOT NULL COMMENT '封口设备ID',
+    mold_batch_record_id BIGINT DEFAULT NULL COMMENT '开单时当前换模批次记录ID（显示以快照为准）',
+    batch_no VARCHAR(100) NOT NULL COMMENT '模具批次号快照',
+    mold_model VARCHAR(100) NOT NULL COMMENT '模具型号快照',
+    standard_length DECIMAL(10,2) NOT NULL COMMENT '标准长(mm)',
+    standard_width DECIMAL(10,2) NOT NULL COMMENT '标准宽(mm)',
+    standard_height DECIMAL(10,2) NOT NULL COMMENT '标准高(mm)',
+    tolerance_mm DECIMAL(10,2) NOT NULL COMMENT '公差(±mm)，长宽高共用',
+    measured_length DECIMAL(10,2) NOT NULL COMMENT '实测长(mm)',
+    measured_width DECIMAL(10,2) NOT NULL COMMENT '实测宽(mm)',
+    measured_height DECIMAL(10,2) NOT NULL COMMENT '实测高(mm)',
+    length_deviation DECIMAL(10,2) NOT NULL COMMENT '长量差=实测-标准(mm)',
+    width_deviation DECIMAL(10,2) NOT NULL COMMENT '宽量差=实测-标准(mm)',
+    height_deviation DECIMAL(10,2) NOT NULL COMMENT '高量差=实测-标准(mm)',
+    out_of_tolerance TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否超线：1超线，禁止放行只能退回再量',
+    status VARCHAR(20) NOT NULL COMMENT '放行结果：PENDING待签放/RELEASED已放行/RETURNED已退回再量',
+    operator VARCHAR(100) NOT NULL COMMENT '开单人（调度）',
+    remark VARCHAR(500) DEFAULT NULL COMMENT '备注',
+    release_signer VARCHAR(100) DEFAULT NULL COMMENT '签放人',
+    release_time DATETIME DEFAULT NULL COMMENT '签放时间',
+    return_operator VARCHAR(100) DEFAULT NULL COMMENT '退回人',
+    return_reason VARCHAR(500) DEFAULT NULL COMMENT '退回原因',
+    return_time DATETIME DEFAULT NULL COMMENT '退回时间',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_fai_form_no (form_no),
+    INDEX idx_fai_equipment (equipment_id),
+    INDEX idx_fai_status (status),
+    INDEX idx_fai_create_time (create_time),
+    CONSTRAINT fk_fai_equipment FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE CASCADE,
+    CONSTRAINT fk_fai_mold_batch FOREIGN KEY (mold_batch_record_id) REFERENCES mold_batch_record(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='首件尺寸确认单表（超线单禁止放行，签字留痕可追溯）';
+
 CREATE TABLE IF NOT EXISTS bracket_repair_record (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     bracket_id BIGINT NOT NULL COMMENT '支架ID',
@@ -89,3 +124,10 @@ INSERT INTO mold_batch_record (equipment_id, batch_no, mold_model, change_time, 
 INSERT INTO bracket_repair_record (bracket_id, repair_no, repair_reason, repair_time, repair_operator, return_result, return_time, inspector, return_remark) VALUES
 (4, 'RP-20260820-01', '支耳变形，校形返修', DATE_SUB(NOW(), INTERVAL 20 DAY), '王工', 1, DATE_SUB(NOW(), INTERVAL 18 DAY), '陈检', '校形后尺寸复检合格，准予回库'),
 (5, 'RP-20260910-01', '表面裂纹待处理', DATE_SUB(NOW(), INTERVAL 2 DAY), '王工', NULL, NULL, NULL, NULL);
+
+-- 首件尺寸确认演示（FK-001 当前批次 MB-20260901-02）：一张已放行、一张量差超线退回再量、一张待签放
+INSERT INTO first_article_inspection
+(form_no, equipment_id, mold_batch_record_id, batch_no, mold_model, standard_length, standard_width, standard_height, tolerance_mm, measured_length, measured_width, measured_height, length_deviation, width_deviation, height_deviation, out_of_tolerance, status, operator, remark, release_signer, release_time, return_operator, return_reason, return_time, create_time) VALUES
+('FA-20260911-0001', 1, 2, 'MB-20260901-02', 'MD-X10', 300.00, 150.00, 80.00, 0.50, 300.12, 149.95, 80.08, 0.12, -0.05, 0.08, 0, 'RELEASED', '王调度', '首件合格，准予放量', '陈检', DATE_SUB(NOW(), INTERVAL 2 DAY), NULL, NULL, NULL, DATE_SUB(NOW(), INTERVAL 2 DAY)),
+('FA-20260912-0002', 1, 2, 'MB-20260901-02', 'MD-X10', 300.00, 150.00, 80.00, 0.50, 300.74, 150.10, 79.90, 0.74, 0.10, -0.10, 1, 'RETURNED', '王调度', '复测长度仍超线，已退回调模', NULL, NULL, '李工', '长量差0.74mm超线，退回再量', DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_SUB(NOW(), INTERVAL 1 DAY)),
+('FA-20260913-0003', 1, 2, 'MB-20260901-02', 'MD-X10', 300.00, 150.00, 80.00, 0.50, 300.05, 150.02, 80.01, 0.05, 0.02, 0.01, 0, 'PENDING', '王调度', '待品质签放', NULL, NULL, NULL, NULL, NULL, NOW());

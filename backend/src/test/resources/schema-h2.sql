@@ -35,6 +35,35 @@ CREATE TABLE IF NOT EXISTS mold_batch_record (
     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS first_article_inspection (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    form_no VARCHAR(50) DEFAULT NULL,
+    equipment_id BIGINT NOT NULL,
+    mold_batch_record_id BIGINT DEFAULT NULL,
+    batch_no VARCHAR(100) NOT NULL,
+    mold_model VARCHAR(100) NOT NULL,
+    standard_length DECIMAL(10,2) NOT NULL,
+    standard_width DECIMAL(10,2) NOT NULL,
+    standard_height DECIMAL(10,2) NOT NULL,
+    tolerance_mm DECIMAL(10,2) NOT NULL,
+    measured_length DECIMAL(10,2) NOT NULL,
+    measured_width DECIMAL(10,2) NOT NULL,
+    measured_height DECIMAL(10,2) NOT NULL,
+    length_deviation DECIMAL(10,2) NOT NULL,
+    width_deviation DECIMAL(10,2) NOT NULL,
+    height_deviation DECIMAL(10,2) NOT NULL,
+    out_of_tolerance BOOLEAN NOT NULL DEFAULT FALSE,
+    status VARCHAR(20) NOT NULL,
+    operator VARCHAR(100) NOT NULL,
+    remark VARCHAR(500) DEFAULT NULL,
+    release_signer VARCHAR(100) DEFAULT NULL,
+    release_time TIMESTAMP DEFAULT NULL,
+    return_operator VARCHAR(100) DEFAULT NULL,
+    return_reason VARCHAR(500) DEFAULT NULL,
+    return_time TIMESTAMP DEFAULT NULL,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS bracket_repair_record (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     bracket_id BIGINT NOT NULL,
@@ -53,3 +82,6 @@ CREATE INDEX IF NOT EXISTS idx_mold_batch_equipment ON mold_batch_record (equipm
 CREATE INDEX IF NOT EXISTS idx_mold_batch_change_time ON mold_batch_record (change_time);
 CREATE INDEX IF NOT EXISTS idx_repair_bracket ON bracket_repair_record (bracket_id);
 CREATE INDEX IF NOT EXISTS idx_repair_return_time ON bracket_repair_record (return_time);
+CREATE INDEX IF NOT EXISTS idx_fai_equipment ON first_article_inspection (equipment_id);
+CREATE INDEX IF NOT EXISTS idx_fai_status ON first_article_inspection (status);
+CREATE INDEX IF NOT EXISTS idx_fai_create_time ON first_article_inspection (create_time);

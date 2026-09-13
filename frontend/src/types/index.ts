@@ -143,6 +143,72 @@ export interface MoldBatchGate {
   currentMoldModel?: string | null
 }
 
+/** 首件确认单放行结果：PENDING 待签放 / RELEASED 已放行 / RETURNED 已退回再量 */
+export type FirstArticleStatus = 'PENDING' | 'RELEASED' | 'RETURNED'
+
+/** 首件尺寸确认单开单请求：模具批次由后端取机台当前批次快照 */
+export interface FirstArticleCreateRequest {
+  equipmentId: number
+  standardLength: number
+  standardWidth: number
+  standardHeight: number
+  /** 公差（±mm），长宽高共用 */
+  tolerance: number
+  measuredLength: number
+  measuredWidth: number
+  measuredHeight: number
+  /** 开单人（调度） */
+  operator: string
+  remark?: string | null
+}
+
+/** 首件尺寸确认单；outOfTolerance=true 的超线单不能放行，只能退回再量 */
+export interface FirstArticleRecord {
+  id: number
+  formNo: string
+  equipmentId: number
+  equipmentCode?: string
+  equipmentName?: string
+  moldBatchRecordId?: number | null
+  batchNo: string
+  moldModel: string
+  standardLength: number
+  standardWidth: number
+  standardHeight: number
+  tolerance: number
+  measuredLength: number
+  measuredWidth: number
+  measuredHeight: number
+  /** 量差 = 实测 - 标准（带符号，mm） */
+  lengthDeviation: number
+  widthDeviation: number
+  heightDeviation: number
+  outOfTolerance: boolean
+  status: FirstArticleStatus
+  /** 开单人（调度） */
+  operator: string
+  remark?: string | null
+  /** 签放人/签放时间：已放行单有值 */
+  releaseSigner?: string | null
+  releaseTime?: string | null
+  /** 退回人/退回时间：已退回单有值 */
+  returnOperator?: string | null
+  returnReason?: string | null
+  returnTime?: string | null
+  createTime?: string
+}
+
+/** 首件确认单签放请求 */
+export interface FirstArticleReleaseRequest {
+  signer: string
+}
+
+/** 首件确认单退回再量请求 */
+export interface FirstArticleReturnRequest {
+  operator: string
+  reason?: string | null
+}
+
 /** 规则变更对单条已绑定支架的影响类型 */
 export type RuleImpactType = 'existing_violation' | 'capacity_only' | 'future_only'
 
