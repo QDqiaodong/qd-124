@@ -47,21 +47,25 @@ public class EquipmentService {
         this.moldBatchService = moldBatchService;
     }
 
-    public PageResult<EquipmentVO> findAll(String code, String name, Pageable pageable) {
-        Page<Equipment> page;
-        boolean hasCode = code != null && !code.trim().isEmpty();
-        boolean hasName = name != null && !name.trim().isEmpty();
-        if (!hasCode && !hasName) {
-            page = equipmentRepository.findAll(pageable);
-        } else if (hasCode && !hasName) {
-            page = equipmentRepository.findByEquipmentCodeContaining(code, pageable);
-        } else if (!hasCode && hasName) {
-            page = equipmentRepository.findByEquipmentNameContaining(name, pageable);
-        } else {
-            page = equipmentRepository.findByEquipmentCodeContainingAndEquipmentNameContaining(code, name, pageable);
-        }
+    public PageResult<EquipmentVO> findAll(String code, String name, boolean onlyExceeded, Pageable pageable) {
+        // 排序已内置于原生 SQL（create_time DESC, id DESC），这里去掉 Pageable 上的 Sort，
+        // 避免 Spring Data 把属性排序直接拼到原生 SQL 后面造成列名歧义
+        Pageable unsorted = org.springframework.data.domain.PageRequest.of(
+                pageable.getPageNumber(), pageable.getPageSize());
+        String codeParam = normalizeParam(code);
+        String nameParam = normalizeParam(name);
+        Page<Equipment> page = equipmentRepository.findPage(codeParam, nameParam, onlyExceeded, unsorted);
         List<EquipmentVO> voList = convertToVOList(page.getContent());
         return new PageResult<>(voList, page.getTotalElements(), page.getNumber() + 1, page.getSize());
+    }
+
+    /** 空白搜索词归一化为 null，交给 SQL 的 :param IS NULL 分支跳过该条件。 */
+    private String normalizeParam(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     public List<EquipmentVO> findAllWithBracketCount() {

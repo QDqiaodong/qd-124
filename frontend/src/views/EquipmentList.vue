@@ -50,6 +50,13 @@
             <el-icon><Refresh /></el-icon>
             <span>重置</span>
           </el-button>
+          <div class="exceeded-filter">
+            <span class="exceeded-filter-label" :class="{ 'is-active': onlyExceeded }">只看超额</span>
+            <el-switch
+              v-model="onlyExceeded"
+              @change="handleOnlyExceededChange"
+            />
+          </div>
         </div>
       </div>
 
@@ -241,7 +248,10 @@
         </div>
       </div>
 
-      <el-empty v-if="!loading && equipmentList.length === 0" description="暂无设备数据" />
+      <el-empty
+        v-if="!loading && equipmentList.length === 0"
+        :description="onlyExceeded ? '当前没有挂接数量超出上限的封口机' : '暂无设备数据'"
+      />
 
       <div class="pagination-container">
         <el-pagination
@@ -601,8 +611,23 @@ const router = useRouter()
 
 const loading = ref(false)
 const loadingBracketId = ref<number | null>(null)
-const searchCode = ref('')
-const searchName = ref('')
+
+/** 解析地址栏里的单个查询参数；部分单测只挂了 useRouter 桩，currentRoute 可能不存在，统一可选链兜底 */
+const queryParam = (key: string): string | undefined => {
+  const query = (
+    router as
+      | { currentRoute?: { value?: { query?: Record<string, unknown> }; query?: Record<string, unknown> } }
+      | undefined
+  )?.currentRoute?.value?.query
+  const raw = query?.[key]
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return value ? String(value) : undefined
+}
+
+// 筛选条件（含「只看超额」）从地址栏恢复：刷新页面后超额机仍按服务端结果展示，不会回到全量列表
+const searchCode = ref(queryParam('code') ?? '')
+const searchName = ref(queryParam('name') ?? '')
+const onlyExceeded = ref(queryParam('onlyExceeded') === 'true')
 const unboundCount = ref(0)
 
 const equipmentList = ref<Equipment[]>([])
@@ -655,7 +680,9 @@ const fetchEquipmentList = async () => {
       pageNum: pagination.pageNum,
       pageSize: pagination.pageSize,
       code: searchCode.value || undefined,
-      name: searchName.value || undefined
+      name: searchName.value || undefined,
+      // 服务端按「已挂接数 > 上限」过滤并分页：不能只在前端藏卡片，否则翻页/刷新会对不上
+      onlyExceeded: onlyExceeded.value || undefined
     })
     if (res.data) {
       equipmentList.value = res.data.list
@@ -668,15 +695,41 @@ const fetchEquipmentList = async () => {
   }
 }
 
+/**
+ * 把编号/名称搜索与「只看超额」开关写进地址栏（不新增历史记录）。
+ * 刷新或分享链接后仍由后端按同一份条件返回，超额机不会凭空消失。
+ */
+const syncQueryToUrl = () => {
+  const query: Record<string, string> = {}
+  if (searchCode.value) query.code = searchCode.value
+  if (searchName.value) query.name = searchName.value
+  if (onlyExceeded.value) query.onlyExceeded = 'true'
+  // 部分单测的 useRouter 桩没有 replace/currentRoute，这里统一兜底，不阻塞列表请求
+  const replace = (router as { replace?: (location: { query: typeof query }) => unknown } | undefined)?.replace
+  if (typeof replace === 'function') {
+    Promise.resolve(replace.call(router, { query })).catch(() => {})
+  }
+}
+
 const handleSearch = () => {
   pagination.pageNum = 1
+  syncQueryToUrl()
   fetchEquipmentList()
 }
 
 const handleReset = () => {
   searchCode.value = ''
   searchName.value = ''
+  onlyExceeded.value = false
   pagination.pageNum = 1
+  syncQueryToUrl()
+  fetchEquipmentList()
+}
+
+/** 开关切换：回到第一页并按服务端过滤结果刷新，关闭后回到当前编号/名称搜索结果 */
+const handleOnlyExceededChange = () => {
+  pagination.pageNum = 1
+  syncQueryToUrl()
   fetchEquipmentList()
 }
 
@@ -1034,6 +1087,26 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.exceeded-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  padding-left: 16px;
+  border-left: 1px solid #e2e8f0;
+}
+
+.exceeded-filter-label {
+  font-size: 13px;
+  color: #64748b;
+  transition: color 0.2s;
+}
+
+.exceeded-filter-label.is-active {
+  font-weight: 600;
+  color: #dc2626;
+}
+
 .equipment-card-meta {
   display: flex;
   align-items: center;

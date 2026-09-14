@@ -34,6 +34,7 @@ public class RuleTableMigration implements InitializingBean {
         ruleColumns.put("max_brackets", "INT DEFAULT NULL COMMENT '最大支架数量，空表示不限制'");
         ruleColumns.put("allowed_models", "VARCHAR(1000) DEFAULT NULL COMMENT '允许型号，逗号分隔，空表示不限制'");
         ruleColumns.put("allowed_mold_models", "VARCHAR(1000) DEFAULT NULL COMMENT '允许模具型号清单，逗号分隔'");
+        ruleColumns.put("required_lubrication_points", "INT DEFAULT NULL COMMENT '当班润滑要求点数，空表示未维护'");
         ruleColumns.put("min_length", "DECIMAL(10,2) DEFAULT NULL COMMENT '允许最小长度(mm)'");
         ruleColumns.put("max_length", "DECIMAL(10,2) DEFAULT NULL COMMENT '允许最大长度(mm)'");
         ruleColumns.put("min_width", "DECIMAL(10,2) DEFAULT NULL COMMENT '允许最小宽度(mm)'");

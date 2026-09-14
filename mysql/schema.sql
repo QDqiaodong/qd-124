@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS equipment (
     max_brackets INT DEFAULT NULL COMMENT '最大支架数量，空表示不限制',
     allowed_models VARCHAR(1000) DEFAULT NULL COMMENT '允许支架型号，逗号分隔，空表示不限制',
     allowed_mold_models VARCHAR(1000) DEFAULT NULL COMMENT '允许模具型号清单，逗号分隔；换模批次型号必须在此清单内',
+    required_lubrication_points INT DEFAULT NULL COMMENT '当班润滑要求点数，空表示未维护',
     min_length DECIMAL(10,2) DEFAULT NULL COMMENT '允许最小长度(mm)',
     max_length DECIMAL(10,2) DEFAULT NULL COMMENT '允许最大长度(mm)',
     min_width DECIMAL(10,2) DEFAULT NULL COMMENT '允许最小宽度(mm)',

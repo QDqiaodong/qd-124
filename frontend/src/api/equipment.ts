@@ -15,6 +15,8 @@ export function getEquipmentList(params: {
   pageSize: number
   code?: string
   name?: string
+  /** 只看挂接数量已超过容量上限的封口机（服务端过滤，刷新/翻页保持一致） */
+  onlyExceeded?: boolean
 }): Promise<ApiResponse<PageResponse<Equipment>>> {
   return request({
     url: '/equipment/list',

@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS equipment (
     max_brackets INT DEFAULT NULL,
     allowed_models VARCHAR(1000) DEFAULT NULL,
     allowed_mold_models VARCHAR(1000) DEFAULT NULL,
+    required_lubrication_points INT DEFAULT NULL,
     min_length DECIMAL(10,2) DEFAULT NULL,
     max_length DECIMAL(10,2) DEFAULT NULL,
     min_width DECIMAL(10,2) DEFAULT NULL,

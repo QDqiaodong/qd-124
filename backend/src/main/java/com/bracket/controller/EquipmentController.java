@@ -32,9 +32,10 @@ public class EquipmentController {
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "10") int pageSize,
             @RequestParam(required = false) String code,
-            @RequestParam(required = false) String name) {
+            @RequestParam(required = false) String name,
+            @RequestParam(defaultValue = "false") boolean onlyExceeded) {
         Pageable pageable = PageRequest.of(pageNum - 1, pageSize, Sort.by(Sort.Direction.DESC, "createTime"));
-        return ApiResponse.success(equipmentService.findAll(code, name, pageable));
+        return ApiResponse.success(equipmentService.findAll(code, name, onlyExceeded, pageable));
     }
 
     @GetMapping("/all")
